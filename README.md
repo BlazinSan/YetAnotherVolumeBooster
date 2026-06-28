@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/VolumeBoost.png" alt="VolumeBoost icon" width="120" height="120">
+  <img src="VolumeBoost.png" alt="VolumeBoost icon" width="120" height="120">
 
 # VolumeBoost
 
