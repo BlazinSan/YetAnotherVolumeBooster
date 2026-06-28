@@ -276,8 +276,6 @@ Equalizer APO is a separate third-party project distributed under the GNU GPL v2
 ## Acknowledgements
 
 - [Equalizer APO](https://sourceforge.net/projects/equalizerapo/) — system-wide Windows audio-processing engine
-- [EverythingUTM](https://github.com/BlazinSan/EverythingUTM) — emerald palette and circular theme-transition design direction
-- [PrivacyScreenFilter](https://github.com/BlazinSan/PrivacyScreenFilter) — tray/status icon visual direction
 
 ---
 
