@@ -1,0 +1,9 @@
+Equalizer APO is licensed under the GNU General Public License version 2.
+
+Official project: https://sourceforge.net/projects/equalizerapo/
+Source code: https://sourceforge.net/p/equalizerapo/code/
+License text: https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
+
+This VolumeBoost distribution does not modify Equalizer APO. The installer downloads
+or may bundle the official Equalizer APO 1.4.2 x64 installer and verifies its
+published SHA-256 checksum before execution.
