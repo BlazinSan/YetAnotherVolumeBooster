@@ -1,0 +1,3 @@
+57695f7505f6cfe77bd0dc558024e9858ae3f5c1af23d7ce856da77ff1e7f364  dist/YetAnotherVolumeBooster.exe
+f1c01f78d34f558c924092d4e88cd16011439ab0f4028e2121a6403604ea58bf  dist/VolumeBoostSetup.exe
+95ebbddca461e0cae499bf31974cf4dc75140c176aa3abf52ee5fbeb6c4c5e81  setup/payload/EqualizerAPO-x64-1.4.2.exe
