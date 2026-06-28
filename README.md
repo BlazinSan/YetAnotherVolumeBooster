@@ -1,29 +1,29 @@
 <div align="center">
-  <img src="VolumeBoost.png" alt="VolumeBoost icon" width="120" height="120">
+  <img src="YetAnotherVolumeBooster.png" alt="YetAnotherVolumeBooster icon" width="120" height="120">
 
-# VolumeBoost
+# YetAnotherVolumeBooster
 
 ### A clean, native Windows volume amplifier with system-wide gain from 100% to 500%.
 
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)](#requirements)
 [![Architecture](https://img.shields.io/badge/Architecture-x64-555555)](#requirements)
-[![Version](https://img.shields.io/badge/version-1.7.0-0f7a52)](https://github.com/BlazinSan/VolumeBoost/releases/latest)
+[![Version](https://img.shields.io/badge/version-1.7.0-0f7a52)](https://github.com/BlazinSan/YetAnotherVolumeBooster/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-0f7a52)](LICENSE.txt)
 [![Equalizer APO](https://img.shields.io/badge/audio%20engine-Equalizer%20APO%201.4.2-189a6c)](https://sourceforge.net/projects/equalizerapo/)
 
-[Download the latest release](https://github.com/BlazinSan/VolumeBoost/releases/latest) · [Report a bug](../../issues/new)
+[Download the latest release](https://github.com/BlazinSan/YetAnotherVolumeBooster/releases/latest) · [Report a bug](../../issues/new)
 </div>
 
 ---
 
 ## About
 
-VolumeBoost is a lightweight Windows utility that increases shared-mode system audio beyond the normal 100% limit. It provides a polished 100–500% gain controller while using [Equalizer APO](https://sourceforge.net/projects/equalizerapo/) as the underlying Windows Audio Processing Object.
+YetAnotherVolumeBooster is a lightweight Windows utility that increases shared-mode system audio beyond the normal 100% limit. It provides a polished 100–500% gain controller while using [Equalizer APO](https://sourceforge.net/projects/equalizerapo/) as the underlying Windows Audio Processing Object.
 
 It is designed to feel like a small native Windows utility rather than a full equalizer suite: install it once, select your playback device, and control the boost from the main window or system tray.
 
 > [!IMPORTANT]
-> VolumeBoost does **not** install its own background service. Equalizer APO runs inside the Windows audio engine. A true app exit resets VolumeBoost's managed gain to **100% / 0.00 dB**. Closing to the tray intentionally keeps the selected boost active.
+> YetAnotherVolumeBooster does **not** install its own background service. Equalizer APO runs inside the Windows audio engine. A true app exit resets YetAnotherVolumeBooster's managed gain to **100% / 0.00 dB**. Closing to the tray intentionally keeps the selected boost active.
 
 ## Features
 
@@ -44,9 +44,9 @@ It is designed to feel like a small native Windows utility rather than a full eq
 
 ## Gain levels
 
-VolumeBoost displays a linear amplitude multiplier and converts it to Equalizer APO preamp gain:
+YetAnotherVolumeBooster displays a linear amplitude multiplier and converts it to Equalizer APO preamp gain:
 
-| VolumeBoost | APO gain |
+| YetAnotherVolumeBooster | APO gain |
 |---:|---:|
 | 100% | 0.00 dB |
 | 200% | +6.02 dB |
@@ -65,26 +65,26 @@ VolumeBoost displays a linear amplitude multiplier and converts it to Equalizer 
 - A playback device that supports Windows audio enhancements/APOs
 - Shared-mode audio playback
 
-ASIO and WASAPI exclusive-mode applications may bypass the Windows APO pipeline and therefore may not be affected by VolumeBoost.
+ASIO and WASAPI exclusive-mode applications may bypass the Windows APO pipeline and therefore may not be affected by YetAnotherVolumeBooster.
 
 ## Installation
 
-1. Open the repository's **[Releases](https://github.com/BlazinSan/VolumeBoost/releases/latest)** page.
-2. Download `VolumeBoostSetup.exe` from the latest release.
+1. Open the repository's **[Releases](https://github.com/BlazinSan/YetAnotherVolumeBooster/releases/latest)** page.
+2. Download `YetAnotherVolumeBoosterSetup.exe` from the latest release.
 3. Run the installer and approve the Windows administrator prompt.
 4. Confirm the installation when prompted.
-5. If Equalizer APO is not already installed, VolumeBoost will:
+5. If Equalizer APO is not already installed, YetAnotherVolumeBooster will:
    - download the official Equalizer APO 1.4.2 x64 installer;
    - verify its SHA-256 checksum before execution; and
    - install it automatically.
 6. In the Equalizer APO device selector, select the **actual speakers, headphones, Bluetooth device, USB DAC, or monitor output you use**.
 7. Click **OK** in the device selector.
 8. Restart Windows if setup says the Windows Audio service could not be restarted automatically.
-9. Open VolumeBoost and compare 100% with 200% while audio is playing.
+9. Open YetAnotherVolumeBooster and compare 100% with 200% while audio is playing.
 
 ### Windows SmartScreen
 
-Community builds may be unsigned and can trigger a Microsoft Defender SmartScreen warning. Download VolumeBoost only from this repository's Releases page and compare the file checksum with the release notes when one is provided.
+Community builds may be unsigned and can trigger a Microsoft Defender SmartScreen warning. Download YetAnotherVolumeBooster only from this repository's Releases page and compare the file checksum with the release notes when one is provided.
 
 ## Usage
 
@@ -102,7 +102,7 @@ Active · Windows 100% · APO +6.02 dB
 
 The tray menu provides:
 
-- Open VolumeBoost
+- Open YetAnotherVolumeBooster
 - 100%, 200%, 300%, 400%, and 500% presets
 - Start with Windows toggle
 - Close button minimizes to tray toggle
@@ -122,30 +122,30 @@ Left-click or double-click the tray icon to reopen the window.
 ## How it works
 
 ```text
-VolumeBoost.exe
+YetAnotherVolumeBooster.exe
       │
       ├─ sets the active Windows playback endpoint to 100% when needed
       │
       └─ writes a managed preamp value to:
-         C:\Program Files\EqualizerAPO\config\VolumeBoost\gain.txt
+         C:\Program Files\EqualizerAPO\config\YetAnotherVolumeBooster\gain.txt
                               │
                               └─ Equalizer APO reloads the configuration
                                  and processes shared-mode Windows audio
 ```
 
-VolumeBoost adds one managed block to Equalizer APO's main configuration:
+YetAnotherVolumeBooster adds one managed block to Equalizer APO's main configuration:
 
 ```text
-# BEGIN VolumeBoost
-Include: VolumeBoost\gain.txt
-# END VolumeBoost
+# BEGIN YetAnotherVolumeBooster
+Include: YetAnotherVolumeBooster\gain.txt
+# END YetAnotherVolumeBooster
 ```
 
 Existing Equalizer APO configuration is preserved, and the installer creates a backup before modifying `config.txt`.
 
 ## Updating
 
-1. Download the newest `VolumeBoostSetup.exe`.
+1. Download the newest `YetAnotherVolumeBoosterSetup.exe`.
 2. Run it over the existing installation.
 3. Confirm the active playback device if the device selector opens.
 4. Restart Windows only if requested.
@@ -155,10 +155,10 @@ Your user preferences and managed gain configuration are preserved during a norm
 ## Uninstallation
 
 1. Open **Windows Settings → Apps → Installed apps**.
-2. Find **VolumeBoost**.
+2. Find **YetAnotherVolumeBooster**.
 3. Select **Uninstall** and confirm.
 
-The uninstaller removes VolumeBoost, its shortcuts, startup entry, managed APO include, gain file, and ProgramData diagnostic logs. Equalizer APO is intentionally left installed to avoid damaging unrelated audio configurations. Remove Equalizer APO separately from Windows Settings only when no other application or configuration uses it. To remove saved UI preferences as well, delete `%APPDATA%\VolumeBoost`.
+The uninstaller removes YetAnotherVolumeBooster, its shortcuts, startup entry, managed APO include, gain file, and ProgramData diagnostic logs. Equalizer APO is intentionally left installed to avoid damaging unrelated audio configurations. Remove Equalizer APO separately from Windows Settings only when no other application or configuration uses it. To remove saved UI preferences as well, delete `%APPDATA%\YetAnotherVolumeBooster`.
 
 ## Troubleshooting
 
@@ -182,19 +182,19 @@ The **Close button minimizes to tray** setting is enabled. Use **Exit** from the
 
 ### Device Selector reports a Qt platform-plugin error
 
-Run **Repair Integration** from VolumeBoost. The repair launcher isolates Equalizer APO's Qt environment, verifies the platform plugin, and records detailed diagnostics if the selector still fails.
+Run **Repair Integration** from YetAnotherVolumeBooster. The repair launcher isolates Equalizer APO's Qt environment, verifies the platform plugin, and records detailed diagnostics if the selector still fails.
 
 ### No tray icon appears
 
-Check the Windows notification-area overflow menu. If VolumeBoost is running but the icon is not visible, end `VolumeBoost.exe` in Task Manager and launch it again from the Start menu.
+Check the Windows notification-area overflow menu. If YetAnotherVolumeBooster is running but the icon is not visible, end `YetAnotherVolumeBooster.exe` in Task Manager and launch it again from the Start menu.
 
 ## Diagnostic logs
 
-Use the **Logs** button in VolumeBoost, or open:
+Use the **Logs** button in YetAnotherVolumeBooster, or open:
 
 ```text
-C:\ProgramData\VolumeBoost\logs\VolumeBoost.log
-C:\ProgramData\VolumeBoost\logs\VolumeBoostSetup.log
+C:\ProgramData\YetAnotherVolumeBooster\logs\YetAnotherVolumeBooster.log
+C:\ProgramData\YetAnotherVolumeBooster\logs\YetAnotherVolumeBoosterSetup.log
 ```
 
 When reporting a bug, attach both files and include:
@@ -202,7 +202,7 @@ When reporting a bug, attach both files and include:
 - Windows version
 - Playback-device name
 - Whether the device is Bluetooth, USB, HDMI/DisplayPort, or built-in audio
-- The VolumeBoost percentage tested
+- The YetAnotherVolumeBooster percentage tested
 - Whether a Windows restart was performed after device setup
 
 ## Building from source
@@ -216,16 +216,16 @@ When reporting a bug, attach both files and include:
 ### Build
 
 ```powershell
-git clone https://github.com/BlazinSan/VolumeBoost.git
-cd VolumeBoost
+git clone https://github.com/BlazinSan/YetAnotherVolumeBooster.git
+cd YetAnotherVolumeBooster
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
 The output is written to:
 
 ```text
-dist\VolumeBoost.exe
-dist\VolumeBoostSetup.exe
+dist\YetAnotherVolumeBooster.exe
+dist\YetAnotherVolumeBoosterSetup.exe
 ```
 
 ### Online installer build
@@ -236,7 +236,7 @@ The repository includes a small placeholder at:
 setup\payload\EqualizerAPO-x64-1.4.2.exe
 ```
 
-With the placeholder present, `VolumeBoostSetup.exe` downloads the official Equalizer APO installer during setup and verifies this expected SHA-256 value:
+With the placeholder present, `YetAnotherVolumeBoosterSetup.exe` downloads the official Equalizer APO installer during setup and verifies this expected SHA-256 value:
 
 ```text
 7403BE7427BBE1936A40DDED082829B6E217FC4F5990FEE5CBA501F0AE055AFA
@@ -254,7 +254,7 @@ The setup program will embed the verified installer and produce one offline inst
 ## Project layout
 
 ```text
-app/                 Native VolumeBoost controller
+app/                 Native YetAnotherVolumeBooster controller
 setup/               Installer, repair, and uninstall program
 setup/payload/       Embedded application and optional APO installer
 assets/              Application artwork and icons
@@ -265,19 +265,17 @@ dist/                 Compiled executables
 
 ## Privacy and networking
 
-VolumeBoost contains no analytics, accounts, advertisements, or telemetry. The controller does not require internet access. The online setup build connects to SourceForge only when Equalizer APO is missing and its installer must be downloaded. The downloaded file is rejected unless its SHA-256 checksum matches the expected official value.
+YetAnotherVolumeBooster contains no analytics, accounts, advertisements, or telemetry. The controller does not require internet access. The online setup build connects to SourceForge only when Equalizer APO is missing and its installer must be downloaded. The downloaded file is rejected unless its SHA-256 checksum matches the expected official value.
 
 ## Licence
 
-VolumeBoost's original source code is released under the [MIT License](LICENSE.txt).
+YetAnotherVolumeBooster's original source code is released under the [MIT License](LICENSE.txt).
 
 Equalizer APO is a separate third-party project distributed under the GNU GPL v2. Its licence and source information are included under `licenses/`; the installer also writes `THIRD-PARTY-NOTICES.txt` into the installation directory.
 
 ## Acknowledgements
 
 - [Equalizer APO](https://sourceforge.net/projects/equalizerapo/) — system-wide Windows audio-processing engine
-- [EverythingUTM](https://github.com/BlazinSan/EverythingUTM) — emerald palette and circular theme-transition design direction
-- [PrivacyScreenFilter](https://github.com/BlazinSan/PrivacyScreenFilter) — tray/status icon visual direction
 
 ---
 
