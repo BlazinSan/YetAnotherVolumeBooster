@@ -267,7 +267,7 @@ dist/                 Compiled executables
 
 YetAnotherVolumeBooster contains no analytics, accounts, advertisements, or telemetry. The controller does not require internet access. The online setup build connects to SourceForge only when Equalizer APO is missing and its installer must be downloaded. The downloaded file is rejected unless its SHA-256 checksum matches the expected official value.
 
-## Licence
+## License
 
 YetAnotherVolumeBooster's original source code is released under the [MIT License](LICENSE.txt).
 
