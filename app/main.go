@@ -176,7 +176,7 @@ func integrationActiveFor(percent int) bool {
 	if err != nil {
 		return false
 	}
-	if !strings.Contains(strings.ToLower(string(data)), `include: YetAnotherVolumeBooster\gain.txt`) {
+	if !strings.Contains(strings.ToLower(string(data)), `include: yetanothervolumebooster\gain.txt`) {
 		return false
 	}
 	return percent <= 100 || fileExists(gainFile())
@@ -345,6 +345,7 @@ func requestExit() {
 	}
 	isClosing = true
 	resetBoostBeforeExit()
+	animateWindow(90, awBlend|awHide)
 	procDestroyWindow.Call(uintptr(hwndMain))
 }
 
