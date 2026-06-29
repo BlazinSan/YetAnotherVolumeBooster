@@ -70,7 +70,7 @@ ASIO and WASAPI exclusive-mode applications may bypass the Windows APO pipeline 
 ## Installation
 
 1. Open the repository's **[Releases](https://github.com/BlazinSan/YetAnotherVolumeBooster/releases/latest)** page.
-2. Download `VolumeBoostSetup.exe` from the latest release.
+2. Download `YetAnotherVolumeBoosterSetup.exe` from the latest release.
 3. Run the installer and approve the Windows administrator prompt.
 4. Confirm the installation when prompted.
 5. If Equalizer APO is not already installed, YetAnotherVolumeBooster will:
@@ -145,7 +145,7 @@ Existing Equalizer APO configuration is preserved, and the installer creates a b
 
 ## Updating
 
-1. Download the newest `VolumeBoostSetup.exe`.
+1. Download the newest `YetAnotherVolumeBoosterSetup.exe`.
 2. Run it over the existing installation.
 3. Confirm the active playback device if the device selector opens.
 4. Restart Windows only if requested.
@@ -194,7 +194,7 @@ Use the **Logs** button in YetAnotherVolumeBooster, or open:
 
 ```text
 C:\ProgramData\YetAnotherVolumeBooster\logs\YetAnotherVolumeBooster.log
-C:\ProgramData\YetAnotherVolumeBooster\logs\VolumeBoostSetup.log
+C:\ProgramData\YetAnotherVolumeBooster\logs\YetAnotherVolumeBoosterSetup.log
 ```
 
 When reporting a bug, attach both files and include:
@@ -225,7 +225,7 @@ The output is written to:
 
 ```text
 dist\YetAnotherVolumeBooster.exe
-dist\VolumeBoostSetup.exe
+dist\YetAnotherVolumeBoosterSetup.exe
 ```
 
 ### Online installer build
@@ -236,7 +236,7 @@ The repository includes a small placeholder at:
 setup\payload\EqualizerAPO-x64-1.4.2.exe
 ```
 
-With the placeholder present, `VolumeBoostSetup.exe` downloads the official Equalizer APO installer during setup and verifies this expected SHA-256 value:
+With the placeholder present, `YetAnotherVolumeBoosterSetup.exe` downloads the official Equalizer APO installer during setup and verifies this expected SHA-256 value:
 
 ```text
 7403BE7427BBE1936A40DDED082829B6E217FC4F5990FEE5CBA501F0AE055AFA

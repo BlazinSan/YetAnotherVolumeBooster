@@ -41,7 +41,7 @@ func initSetupLogging() string {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			continue
 		}
-		path := filepath.Join(dir, "VolumeBoostSetup.log")
+		path := filepath.Join(dir, "YetAnotherVolumeBoosterSetup.log")
 		rotateSetupLog(path)
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
@@ -102,5 +102,5 @@ func setupLogLocation() string {
 	if setupLogPath != "" {
 		return setupLogPath
 	}
-	return filepath.Join(setupPreferredLogDir(), "VolumeBoostSetup.log")
+	return filepath.Join(setupPreferredLogDir(), "YetAnotherVolumeBoosterSetup.log")
 }

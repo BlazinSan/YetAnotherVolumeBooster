@@ -13,6 +13,7 @@ import (
 const (
 	logicalClientWidth  = 760
 	logicalClientHeight = 700
+	sliderKnobInset     = 16
 
 	STD_ERROR_HANDLE = ^uint32(11)
 
@@ -45,7 +46,9 @@ const (
 	wmPaint         = 0x000F
 	wmClose         = 0x0010
 	wmEraseBkgnd    = 0x0014
+	wmNcCalcSize    = 0x0083
 	wmNcHitTest     = 0x0084
+	wmNcRButtonUp   = 0x00A5
 	wmCommand       = 0x0111
 	wmTimer         = 0x0113
 	wmSetIcon       = 0x0080
@@ -95,9 +98,18 @@ const (
 	titleButtonTop       = 8
 	titleThemeButtonSize = 28
 	titleThemeGap        = 12
+	resizeBorder         = 8
 
-	htClient  = 1
-	htCaption = 2
+	htClient      = 1
+	htCaption     = 2
+	htLeft        = 10
+	htRight       = 11
+	htTop         = 12
+	htTopLeft     = 13
+	htTopRight    = 14
+	htBottom      = 15
+	htBottomLeft  = 16
+	htBottomRight = 17
 
 	moveFileReplaceExisting = 0x1
 	moveFileWriteThrough    = 0x8
@@ -285,6 +297,8 @@ var (
 	pressedElement = uiNone
 	mouseTracked   bool
 	animationPhase int
+	dragAppliedPct int
+	dragAppliedAt  time.Time
 
 	startupToggleVisual  float64
 	closeToggleVisual    float64
@@ -454,16 +468,25 @@ func pointInRect(p point, r rect) bool {
 }
 
 func rawLogicalClientWidth() int32 {
+	width, _ := rawLogicalClientSize()
+	return width
+}
+
+func rawLogicalClientSize() (int32, int32) {
 	if hwndMain == 0 {
-		return logicalClientWidth
+		return logicalClientWidth, logicalClientHeight
 	}
 	var rc rect
 	procGetClientRect.Call(uintptr(hwndMain), uintptr(unsafe.Pointer(&rc)))
 	width := int32(math.Round(float64(rc.right-rc.left) / dpiScale))
+	height := int32(math.Round(float64(rc.bottom-rc.top) / dpiScale))
 	if width < logicalClientWidth {
-		return logicalClientWidth
+		width = logicalClientWidth
 	}
-	return width
+	if height < logicalClientHeight {
+		height = logicalClientHeight
+	}
+	return width, height
 }
 
 type titleButtonSpec struct {
@@ -513,6 +536,34 @@ func titleHitTest(p point) int {
 		}
 	}
 	return uiNone
+}
+
+func resizeHitTest(p point) uintptr {
+	width, height := rawLogicalClientSize()
+	left := p.x >= 0 && p.x < resizeBorder
+	right := p.x >= width-resizeBorder && p.x < width
+	top := p.y >= 0 && p.y < resizeBorder
+	bottom := p.y >= height-resizeBorder && p.y < height
+	switch {
+	case top && left:
+		return htTopLeft
+	case top && right:
+		return htTopRight
+	case bottom && left:
+		return htBottomLeft
+	case bottom && right:
+		return htBottomRight
+	case left:
+		return htLeft
+	case right:
+		return htRight
+	case top:
+		return htTop
+	case bottom:
+		return htBottom
+	default:
+		return 0
+	}
 }
 
 func lowordSigned(v uintptr) int32 { return int32(int16(uint16(v & 0xffff))) }
@@ -601,6 +652,29 @@ func strokeRoundRect(hdc syscall.Handle, target rect, radius int32, color uintpt
 	procSelectObject.Call(uintptr(hdc), oldBrush)
 	procSelectObject.Call(uintptr(hdc), oldPen)
 	procDeleteObject.Call(pen)
+}
+
+func fillStrokeRoundRect(hdc syscall.Handle, target rect, radius int32, fill, border uintptr, width int32) {
+	if width <= 0 {
+		fillRoundRect(hdc, target, radius, fill)
+		return
+	}
+	fillRoundRect(hdc, target, radius, border)
+	inset := scaleInt(width)
+	inner := rect{
+		left:   target.left + inset,
+		top:    target.top + inset,
+		right:  target.right - inset,
+		bottom: target.bottom - inset,
+	}
+	if inner.right <= inner.left || inner.bottom <= inner.top {
+		return
+	}
+	innerRadius := radius - width
+	if innerRadius < 1 {
+		innerRadius = 1
+	}
+	fillRoundRect(hdc, inner, innerRadius, fill)
 }
 
 func fillGradientRoundRect(hdc syscall.Handle, target rect, radius int32, leftColor, rightColor uintptr) {
@@ -693,8 +767,14 @@ func drawSlider(hdc syscall.Handle) {
 
 	trackLeft := mixColor(palette.cardSoft, palette.border, 0.25)
 	trackRight := mixColor(palette.cardSoft, palette.accentLight, 0.18)
-	fillGradientRoundRect(hdc, r, 22, trackLeft, trackRight)
-	strokeRoundRect(hdc, r, 22, mixColor(palette.border, palette.card, 0.35), 1)
+	trackBorder := mixColor(palette.border, palette.card, 0.35)
+	fillRoundRect(hdc, r, 22, trackBorder)
+	track := r
+	track.left += scaleInt(1)
+	track.top += scaleInt(1)
+	track.right -= scaleInt(1)
+	track.bottom -= scaleInt(1)
+	fillGradientRoundRect(hdc, track, 21, trackLeft, trackRight)
 
 	position := (displayPct - 100.0) / 400.0
 	if position < 0 {
@@ -703,22 +783,24 @@ func drawSlider(hdc syscall.Handle) {
 	if position > 1 {
 		position = 1
 	}
-	fillWidth := int32(math.Round(float64(r.right-r.left) * position))
+	fillWidth := int32(math.Round(float64(track.right-track.left) * position))
 	if fillWidth > 0 {
-		active := r
-		active.right = r.left + fillWidth
+		active := track
+		active.right = track.left + fillWidth
 		// Keep a rounded leading/trailing cap even while dragging near either edge.
 		minWidth := scaleInt(14)
 		if active.right-active.left < minWidth {
 			active.right = active.left + minWidth
 		}
-		if active.right > r.right {
-			active.right = r.right
+		if active.right > track.right {
+			active.right = track.right
 		}
-		fillGradientRoundRect(hdc, active, 22, palette.accentDark, palette.accentLight)
+		fillGradientRoundRect(hdc, active, 21, palette.accentDark, palette.accentLight)
 	}
 
-	knobXLogical := sliderRect.left + int32(math.Round(float64(sliderRect.right-sliderRect.left)*position))
+	travelLeft := sliderRect.left + sliderKnobInset
+	travelRight := sliderRect.right - sliderKnobInset
+	knobXLogical := travelLeft + int32(math.Round(float64(travelRight-travelLeft)*position))
 	knobYLogical := (sliderRect.top + sliderRect.bottom) / 2
 	drawCircle(hdc, knobXLogical, knobYLogical+3, 14, palette.shadow)
 	drawCircle(hdc, knobXLogical, knobYLogical, 13, palette.card)
@@ -748,12 +830,11 @@ func drawPresetButton(hdc syscall.Handle, index int, percent int) {
 	} else if hovered {
 		fill = palette.cardSoft
 	}
-	fillRoundRect(hdc, r, 15, fill)
 	border := palette.border
 	if active {
 		border = palette.accent
 	}
-	strokeRoundRect(hdc, r, 15, border, 1)
+	fillStrokeRoundRect(hdc, r, 15, fill, border, 1)
 	color := palette.text
 	if active {
 		color = palette.accent
@@ -794,8 +875,7 @@ func drawActionButton(hdc syscall.Handle, target rect, id int, label string) {
 	} else if hovered {
 		fill = palette.cardSoft
 	}
-	fillRoundRect(hdc, r, 13, fill)
-	strokeRoundRect(hdc, r, 13, palette.border, 1)
+	fillStrokeRoundRect(hdc, r, 13, fill, palette.border, 1)
 	iconX := target.left + 28
 	iconY := (target.top + target.bottom) / 2
 	drawActionIcon(hdc, id, iconX, iconY, palette.muted)
@@ -815,19 +895,24 @@ func drawToggle(hdc syscall.Handle, centerX, centerY int32, progress float64, ho
 	if hovered {
 		offColor = mixColor(offColor, palette.accent, 0.12)
 	}
-	fillRoundRect(hdc, target, 30, offColor)
+	border := mixColor(palette.border, palette.card, 0.25)
+	fillStrokeRoundRect(hdc, target, 30, offColor, border, 1)
 	if progress > 0.001 {
 		on := target
+		inset := scaleInt(1)
+		on.left += inset
+		on.top += inset
+		on.right -= inset
+		on.bottom -= inset
 		on.right = on.left + int32(math.Round(float64(on.right-on.left)*progress))
 		if on.right-on.left < scaleInt(18) {
 			on.right = on.left + scaleInt(18)
 		}
-		if on.right > target.right {
-			on.right = target.right
+		if on.right > target.right-inset {
+			on.right = target.right - inset
 		}
-		fillGradientRoundRect(hdc, on, 30, palette.accentDark, palette.accentLight)
+		fillGradientRoundRect(hdc, on, 29, palette.accentDark, palette.accentLight)
 	}
-	strokeRoundRect(hdc, target, 30, mixColor(palette.border, palette.card, 0.25), 1)
 	knobX := centerX - 12 + int32(math.Round(24*progress))
 	drawCircle(hdc, knobX, centerY+2, 12, palette.shadow)
 	drawCircle(hdc, knobX, centerY, 11, palette.card)
@@ -841,8 +926,7 @@ func drawSettingRow(hdc syscall.Handle, target rect, id int, title, subtitle str
 	if hoverElement == id {
 		fill = palette.cardSoft
 	}
-	fillRoundRect(hdc, r, 15, fill)
-	strokeRoundRect(hdc, r, 15, palette.border, 1)
+	fillStrokeRoundRect(hdc, r, 15, fill, palette.border, 1)
 	drawText(hdc, title, scaledRect(logicalRect(target.left+22, target.top+9, target.right-100, target.top+31)), fontBody, palette.text, dtLeft|dtVCenter|dtSingleLine)
 	drawText(hdc, subtitle, scaledRect(logicalRect(target.left+22, target.top+29, target.right-100, target.bottom-5)), fontSmall, palette.muted, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
 	drawToggle(hdc, target.right-49, (target.top+target.bottom)/2, progress, hoverElement == id)
@@ -867,8 +951,7 @@ func drawAnimatedStatusIcon(hdc syscall.Handle, centerX, centerY int32) {
 
 func drawStatusCard(hdc syscall.Handle) {
 	r := scaledRect(statusCardRect)
-	fillRoundRect(hdc, r, 14, palette.card)
-	strokeRoundRect(hdc, r, 14, palette.border, 1)
+	fillStrokeRoundRect(hdc, r, 14, palette.card, palette.border, 1)
 	drawCircle(hdc, 103, 627, 5, toneColor(currentStatusTone))
 	drawText(hdc, statusText, scaledRect(logicalRect(120, 604, 585, 650)), fontStatus, palette.text, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
 
@@ -883,8 +966,7 @@ func drawStatusCard(hdc syscall.Handle) {
 
 func drawWarning(hdc syscall.Handle) {
 	r := scaledRect(warningRect)
-	fillRoundRect(hdc, r, 11, palette.warningBG)
-	strokeRoundRect(hdc, r, 11, palette.warningBorder, 1)
+	fillStrokeRoundRect(hdc, r, 11, palette.warningBG, palette.warningBorder, 1)
 	drawCircle(hdc, 216, 680, 7, palette.warning)
 	drawText(hdc, "!", scaledRect(logicalRect(209, 673, 223, 687)), fontSmall, palette.card, dtCenter|dtVCenter|dtSingleLine)
 	drawText(hdc, "Protect your hearing. 300–500% may clip or distort.", scaledRect(logicalRect(230, 666, 552, 694)), fontSmall, palette.warningText, dtCenter|dtVCenter|dtSingleLine)
@@ -905,8 +987,7 @@ func drawThemeButton(hdc syscall.Handle, dark bool) {
 	if hoverElement == uiTheme {
 		fill = palette.cardSoft
 	}
-	fillRoundRect(hdc, r, 18, fill)
-	strokeRoundRect(hdc, r, 18, palette.border, 1)
+	fillStrokeRoundRect(hdc, r, 18, fill, palette.border, 1)
 	cx := (target.left + target.right) / 2
 	cy := (target.top + target.bottom) / 2
 	if dark {
@@ -1067,22 +1148,32 @@ func hitTestAll(raw, content point) int {
 	return hitTest(content)
 }
 
-func setPercentFromMouse(p point) {
-	position := float64(p.x-sliderRect.left) / float64(sliderRect.right-sliderRect.left)
+func percentFromSliderPoint(p point) int {
+	travelLeft := sliderRect.left + sliderKnobInset
+	travelRight := sliderRect.right - sliderKnobInset
+	position := float64(p.x-travelLeft) / float64(travelRight-travelLeft)
 	if position < 0 {
 		position = 0
 	}
 	if position > 1 {
 		position = 1
 	}
-	percent := clampPercent(100 + int(math.Round(position*400)))
-	// Dragging is visual-only. Disk/APO writes are committed once on mouse-up,
-	// which eliminates the repeated file reloads that made the slider feel rigid.
-	currentPct = percent
-	targetPct = percent
-	displayPct = float64(percent)
-	statusText = fmt.Sprintf("Preview · %d%% · %+.2f dB", percent, percentToDB(percent))
-	currentStatusTone = toneReady
+	return clampPercent(100 + int(math.Round(position*400)))
+}
+
+func setPercentFromMouse(p point, forceLive bool) {
+	percent := percentFromSliderPoint(p)
+	if forceLive || percent != dragAppliedPct && (dragAppliedAt.IsZero() || time.Since(dragAppliedAt) >= 35*time.Millisecond) {
+		applyPercent(percent, true, false)
+		dragAppliedPct = percent
+		dragAppliedAt = time.Now()
+	} else {
+		currentPct = percent
+		targetPct = percent
+		displayPct = float64(percent)
+		statusText = fmt.Sprintf("Adjusting · %d%% · %+.2f dB", percent, percentToDB(percent))
+		currentStatusTone = toneReady
+	}
 	invalidateWindow()
 }
 
@@ -1137,7 +1228,7 @@ func onMouseMove(hwnd syscall.Handle, lParam uintptr) {
 	p := unscalePoint(lowordSigned(lParam), hiwordSigned(lParam))
 	trackMouse(hwnd)
 	if isDragging {
-		setPercentFromMouse(p)
+		setPercentFromMouse(p, false)
 		return
 	}
 	newHover := hitTestAll(raw, p)
@@ -1153,8 +1244,10 @@ func onMouseDown(hwnd syscall.Handle, lParam uintptr) {
 	pressedElement = hitTestAll(raw, p)
 	if pressedElement == uiSlider {
 		isDragging = true
+		dragAppliedPct = 0
+		dragAppliedAt = time.Time{}
 		procSetCapture.Call(uintptr(hwnd))
-		setPercentFromMouse(p)
+		setPercentFromMouse(p, true)
 	}
 	invalidateWindow()
 }
@@ -1163,11 +1256,10 @@ func onMouseUp(lParam uintptr) {
 	raw := unscaleRawPoint(lowordSigned(lParam), hiwordSigned(lParam))
 	p := unscalePoint(lowordSigned(lParam), hiwordSigned(lParam))
 	if isDragging {
-		setPercentFromMouse(p)
+		setPercentFromMouse(p, true)
 		isDragging = false
 		procReleaseCapture.Call()
 		pressedElement = uiNone
-		applyPercent(currentPct, true, false)
 		invalidateWindow()
 		return
 	}
@@ -1310,6 +1402,9 @@ func wndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr) (resul
 	case wmEraseBkgnd:
 		return 1
 
+	case wmNcCalcSize:
+		return 0
+
 	case wmNcHitTest:
 		screenPoint := point{x: lowordSigned(lParam), y: hiwordSigned(lParam)}
 		procScreenToClient.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&screenPoint)))
@@ -1317,8 +1412,19 @@ func wndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr) (resul
 		if titleHitTest(raw) != uiNone {
 			return htClient
 		}
+		if hit := resizeHitTest(raw); hit != 0 {
+			return hit
+		}
 		if raw.y >= 0 && raw.y < titleBarHeight {
 			return htCaption
+		}
+		r, _, _ := procDefWindowProcW.Call(uintptr(hwnd), uintptr(message), wParam, lParam)
+		return r
+
+	case wmNcRButtonUp:
+		if wParam == htCaption {
+			showTrayMenu()
+			return 0
 		}
 		r, _, _ := procDefWindowProcW.Call(uintptr(hwnd), uintptr(message), wParam, lParam)
 		return r
@@ -1443,11 +1549,9 @@ func runWindow() error {
 
 	clientWidth := scaleInt(logicalClientWidth)
 	clientHeight := scaleInt(logicalClientHeight)
-	windowRect := rect{0, 0, clientWidth, clientHeight}
-	style := uintptr(wsPopup | wsSysMenu | wsMinimizeBox | wsMaximizeBox | wsClipChildren)
-	procAdjustWindowRectEx.Call(uintptr(unsafe.Pointer(&windowRect)), style, 0, wsExAppWindow)
-	windowWidth := windowRect.right - windowRect.left
-	windowHeight := windowRect.bottom - windowRect.top
+	style := uintptr(wsPopup | wsThickFrame | wsSysMenu | wsMinimizeBox | wsMaximizeBox | wsClipChildren)
+	windowWidth := clientWidth
+	windowHeight := clientHeight
 	screenW, _, _ := procGetSystemMetrics.Call(0)
 	screenH, _, _ := procGetSystemMetrics.Call(1)
 	x := (int32(screenW) - windowWidth) / 2

@@ -29,8 +29,8 @@ try {
         Write-Host 'Building online setup. Equalizer APO will be downloaded and verified during installation.'
     }
 
-    go build -trimpath -ldflags '-H windowsgui -s -w' -o (Join-Path $Dist 'VolumeBoostSetup.exe') .\setup
-    Get-FileHash (Join-Path $Dist 'VolumeBoostSetup.exe') -Algorithm SHA256
+    go build -trimpath -ldflags '-H windowsgui -s -w' -o (Join-Path $Dist 'YetAnotherVolumeBoosterSetup.exe') .\setup
+    Get-FileHash (Join-Path $Dist 'YetAnotherVolumeBoosterSetup.exe') -Algorithm SHA256
 }
 finally {
     Pop-Location

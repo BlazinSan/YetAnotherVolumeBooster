@@ -12,7 +12,7 @@ const (
 	errorAlreadyExists = 183
 
 	singleInstanceMutexName = `Local\YetAnotherVolumeBooster.SingleInstance`
-	appWindowClassName      = "VolumeBoostMainWindowV4"
+	appWindowClassName      = "YetAnotherVolumeBoosterMainWindowV5"
 )
 
 var (
@@ -39,7 +39,7 @@ func releaseSingleInstance(handle syscall.Handle) {
 }
 
 func findExistingMainWindow() syscall.Handle {
-	for _, className := range []string{appWindowClassName, "VolumeBoostMainWindowV3"} {
+	for _, className := range []string{appWindowClassName} {
 		hwnd, _, _ := procFindWindowW.Call(uintptr(unsafe.Pointer(utf16(className))), 0)
 		if hwnd != 0 {
 			return syscall.Handle(hwnd)

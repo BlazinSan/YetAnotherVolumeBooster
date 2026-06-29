@@ -144,10 +144,9 @@ func programData() string {
 
 func installDir() string       { return filepath.Join(programFiles(), appName) }
 func appPath() string          { return filepath.Join(installDir(), "YetAnotherVolumeBooster.exe") }
-func setupPath() string        { return filepath.Join(installDir(), "VolumeBoostSetup.exe") }
+func setupPath() string        { return filepath.Join(installDir(), "YetAnotherVolumeBoosterSetup.exe") }
 func iconPath() string         { return filepath.Join(installDir(), "YetAnotherVolumeBooster.ico") }
 func dataDir() string          { return filepath.Join(programData(), appName) }
-func legacyGainPath() string   { return filepath.Join(dataDir(), "volume-boost.txt") }
 func markerPath() string       { return filepath.Join(dataDir(), "apo-installed-by-YetAnotherVolumeBooster") }
 func apoDir() string           { return filepath.Join(programFiles(), "EqualizerAPO") }
 func apoConfigDir() string     { return filepath.Join(apoDir(), "config") }
@@ -155,6 +154,13 @@ func managedConfigDir() string { return filepath.Join(apoConfigDir(), "YetAnothe
 func gainPath() string         { return filepath.Join(managedConfigDir(), "gain.txt") }
 func apoConfig() string        { return filepath.Join(apoConfigDir(), "config.txt") }
 func deviceSelector() string   { return filepath.Join(apoDir(), "DeviceSelector.exe") }
+
+func legacyGainPaths() []string {
+	return []string{
+		filepath.Join(dataDir(), "YetAnotherVolumeBooster.txt"),
+		filepath.Join(dataDir(), "volume-boost.txt"),
+	}
+}
 
 func selectorCandidates() []string {
 	return []string{
@@ -355,7 +361,7 @@ func downloadFile(url, dst string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "VolumeBoostSetup/1.0 (+Windows)")
+	req.Header.Set("User-Agent", "YetAnotherVolumeBoosterSetup/1.0 (+Windows)")
 	req.Header.Set("Accept", "application/octet-stream,*/*")
 	resp, err := client.Do(req)
 	if err != nil {
@@ -565,6 +571,7 @@ func installFiles() error {
 	if err := copySelf(); err != nil {
 		return err
 	}
+	_ = os.Remove(filepath.Join(installDir(), "Volume"+"BoostSetup.exe"))
 	if err := writeFileAtomic(filepath.Join(installDir(), "GPL-2.0.txt"), gplPayload, 0644); err != nil {
 		return err
 	}
@@ -578,17 +585,22 @@ func ensureGainFile() error {
 	}
 
 	content := []byte("# Managed by YetAnotherVolumeBooster\r\n# 100% = +0.00 dB\r\nPreamp: 0.00 dB\r\n")
-	if legacy, err := os.ReadFile(legacyGainPath()); err == nil {
-		if regexp.MustCompile(`(?i)Preamp:\s*[+-]?[0-9]+(?:\.[0-9]+)?\s*dB`).Match(legacy) {
-			setupLog("migrating legacy gain file: from=%s to=%s", legacyGainPath(), gainPath())
-			content = legacy
+	for _, legacyPath := range legacyGainPaths() {
+		if legacy, err := os.ReadFile(legacyPath); err == nil {
+			if regexp.MustCompile(`(?i)Preamp:\s*[+-]?[0-9]+(?:\.[0-9]+)?\s*dB`).Match(legacy) {
+				setupLog("migrating legacy gain file: from=%s to=%s", legacyPath, gainPath())
+				content = legacy
+			}
+			break
 		}
 	}
 	if err := writeFileAtomic(gainPath(), content, 0644); err != nil {
 		return err
 	}
 	// The old file lived outside Equalizer APO's watched tree and is no longer used.
-	_ = os.Remove(legacyGainPath())
+	for _, legacyPath := range legacyGainPaths() {
+		_ = os.Remove(legacyPath)
+	}
 	return nil
 }
 
@@ -723,12 +735,12 @@ func installOrRepair(repair bool, launchApp bool) error {
 
 	if !healthy {
 		if apoWasPresent {
-			messageBox("Equalizer APO's device selector is incomplete or its Qt platform plugin is missing.\n\nVolumeBoost will repair it using the verified official Equalizer APO 1.4.2 installer.", appName+" Setup", MB_OK|MB_ICONINFORMATION)
+			messageBox("Equalizer APO's device selector is incomplete or its Qt platform plugin is missing.\n\nYetAnotherVolumeBooster will repair it using the verified official Equalizer APO 1.4.2 installer.", appName+" Setup", MB_OK|MB_ICONINFORMATION)
 		} else {
 			messageBox("YetAnotherVolumeBooster will now install the official Equalizer APO 1.4.2 audio engine.\n\nAfter installation, select the speakers, headphones, or Bluetooth output you actually use.", appName+" Setup", MB_OK|MB_ICONINFORMATION)
 		}
 
-		tempDir, err := os.MkdirTemp("", "VolumeBoostSetup-")
+		tempDir, err := os.MkdirTemp("", "YetAnotherVolumeBoosterSetup-")
 		if err != nil {
 			return err
 		}

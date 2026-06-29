@@ -82,7 +82,7 @@ func gainFile() string {
 }
 func apoConfigFile() string { return filepath.Join(equalizerAPOConfigDir(), "config.txt") }
 func iconFile() string      { return filepath.Join(installDir(), "YetAnotherVolumeBooster.ico") }
-func setupPath() string     { return filepath.Join(installDir(), "VolumeBoostSetup.exe") }
+func setupPath() string     { return filepath.Join(installDir(), "YetAnotherVolumeBoosterSetup.exe") }
 
 func deviceSelectorPath() string {
 	pf := os.Getenv("ProgramFiles")
@@ -168,15 +168,18 @@ func fileExists(path string) bool {
 	return err == nil && !info.IsDir()
 }
 
-func integrationActive() bool {
-	if !fileExists(deviceSelectorPath()) || !fileExists(gainFile()) {
+func integrationActiveFor(percent int) bool {
+	if !fileExists(deviceSelectorPath()) {
 		return false
 	}
 	data, err := os.ReadFile(apoConfigFile())
 	if err != nil {
 		return false
 	}
-	return strings.Contains(strings.ToLower(string(data)), `include: YetAnotherVolumeBooster\gain.txt`)
+	if !strings.Contains(strings.ToLower(string(data)), `include: YetAnotherVolumeBooster\gain.txt`) {
+		return false
+	}
+	return percent <= 100 || fileExists(gainFile())
 }
 
 func setStatus(text string, tone statusKind) {
@@ -212,7 +215,7 @@ func applyPercent(percent int, persist bool, animate bool) {
 		}
 	}
 
-	if integrationActive() {
+	if integrationActiveFor(percent) {
 		db := percentToDB(percent)
 		if percent > 100 && lastMasterSyncOK {
 			setStatus(fmt.Sprintf("Active · Windows 100%% · APO %+.2f dB", db), toneActive)
@@ -249,7 +252,7 @@ func shellRun(path, params string, elevated bool) error {
 
 func openDeviceSetup() {
 	if !fileExists(setupPath()) {
-		showError("VolumeBoostSetup.exe was not found. Re-run the latest setup file.")
+		showError("YetAnotherVolumeBoosterSetup.exe was not found. Re-run the latest setup file.")
 		return
 	}
 	if err := shellRun(setupPath(), "--device-selector", true); err != nil {
@@ -262,7 +265,7 @@ func openDeviceSetup() {
 
 func repairIntegration() {
 	if !fileExists(setupPath()) {
-		showError("VolumeBoostSetup.exe was not found. Re-run the latest setup file.")
+		showError("YetAnotherVolumeBoosterSetup.exe was not found. Re-run the latest setup file.")
 		return
 	}
 	if err := shellRun(setupPath(), "--repair --no-launch", true); err != nil {
