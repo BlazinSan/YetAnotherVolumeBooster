@@ -16,6 +16,12 @@
 
 ---
 
+
+
+https://github.com/user-attachments/assets/08c96651-e29d-4624-986d-b4f42d5a078e
+
+
+
 ## About
 
 YetAnotherVolumeBooster is a lightweight Windows utility that increases shared-mode system audio beyond the normal 100% limit. It provides a polished 100–500% gain controller while using [Equalizer APO](https://sourceforge.net/projects/equalizerapo/) as the underlying Windows Audio Processing Object.
