@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Dist = Join-Path $Root 'dist'
 $Payload = Join-Path $Root 'setup\payload'
+$ChecksumPath = Join-Path $Root 'SHA256SUMS.txt'
 $ExpectedApoHash = '7403BE7427BBE1936A40DDED082829B6E217FC4F5990FEE5CBA501F0AE055AFA'
 $ApoInstaller = Join-Path $Payload 'EqualizerAPO-x64-1.4.2.exe'
 
@@ -30,6 +31,16 @@ try {
     }
 
     go build -trimpath -ldflags '-H windowsgui -s -w' -o (Join-Path $Dist 'YetAnotherVolumeBoosterSetup.exe') .\setup
+    $ChecksumItems = @(
+        @{ Path = Join-Path $Dist 'YetAnotherVolumeBooster.exe'; Relative = 'dist/YetAnotherVolumeBooster.exe' },
+        @{ Path = Join-Path $Dist 'YetAnotherVolumeBoosterSetup.exe'; Relative = 'dist/YetAnotherVolumeBoosterSetup.exe' },
+        @{ Path = $ApoInstaller; Relative = 'setup/payload/EqualizerAPO-x64-1.4.2.exe' }
+    )
+    $ChecksumEntries = foreach ($Item in $ChecksumItems) {
+        $Hash = (Get-FileHash $Item.Path -Algorithm SHA256).Hash.ToLowerInvariant()
+        "$Hash  $($Item.Relative)"
+    }
+    Set-Content -Path $ChecksumPath -Value $ChecksumEntries -Encoding ascii
     Get-FileHash (Join-Path $Dist 'YetAnotherVolumeBoosterSetup.exe') -Algorithm SHA256
 }
 finally {

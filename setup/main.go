@@ -128,6 +128,10 @@ func hasArg(target string) bool {
 	return false
 }
 
+func unattendedSetup() bool {
+	return hasArg("--yes") || hasArg("--quiet") || hasArg("--silent")
+}
+
 func programFiles() string {
 	if v := os.Getenv("ProgramFiles"); v != "" {
 		return v
@@ -735,9 +739,17 @@ func installOrRepair(repair bool, launchApp bool) error {
 
 	if !healthy {
 		if apoWasPresent {
-			messageBox("Equalizer APO's device selector is incomplete or its Qt platform plugin is missing.\n\nYetAnotherVolumeBooster will repair it using the verified official Equalizer APO 1.4.2 installer.", appName+" Setup", MB_OK|MB_ICONINFORMATION)
+			if unattendedSetup() {
+				setupLog("Equalizer APO repair notice suppressed for unattended setup")
+			} else {
+				messageBox("Equalizer APO's device selector is incomplete or its Qt platform plugin is missing.\n\nYetAnotherVolumeBooster will repair it using the verified official Equalizer APO 1.4.2 installer.", appName+" Setup", MB_OK|MB_ICONINFORMATION)
+			}
 		} else {
-			messageBox("YetAnotherVolumeBooster will now install the official Equalizer APO 1.4.2 audio engine.\n\nAfter installation, select the speakers, headphones, or Bluetooth output you actually use.", appName+" Setup", MB_OK|MB_ICONINFORMATION)
+			if unattendedSetup() {
+				setupLog("Equalizer APO install notice suppressed for unattended setup")
+			} else {
+				messageBox("YetAnotherVolumeBooster will now install the official Equalizer APO 1.4.2 audio engine.\n\nAfter installation, select the speakers, headphones, or Bluetooth output you actually use.", appName+" Setup", MB_OK|MB_ICONINFORMATION)
+			}
 		}
 
 		tempDir, err := os.MkdirTemp("", "YetAnotherVolumeBoosterSetup-")
@@ -809,7 +821,9 @@ func installOrRepair(repair bool, launchApp bool) error {
 		}
 		if err := restartAudioService(); err != nil {
 			setupLog("automatic audio-service restart failed; a Windows restart is required: %v", err)
-			messageBox("The audio device configuration was saved, but Windows Audio could not be restarted automatically.\n\nRestart Windows once before testing YetAnotherVolumeBooster.", appName, MB_OK|MB_ICONINFORMATION)
+			if !unattendedSetup() {
+				messageBox("The audio device configuration was saved, but Windows Audio could not be restarted automatically.\n\nRestart Windows once before testing YetAnotherVolumeBooster.", appName, MB_OK|MB_ICONINFORMATION)
+			}
 		}
 	}
 	if launchApp {
@@ -831,7 +845,7 @@ func fileExists(path string) bool {
 
 func uninstall() error {
 	setupLog("uninstall requested")
-	if messageBox("Remove YetAnotherVolumeBooster and its gain configuration?\n\nEqualizer APO will be left installed so other audio configurations are not damaged.", "Uninstall YetAnotherVolumeBooster", MB_YESNO|MB_ICONQUESTION) != IDYES {
+	if !unattendedSetup() && messageBox("Remove YetAnotherVolumeBooster and its gain configuration?\n\nEqualizer APO will be left installed so other audio configurations are not damaged.", "Uninstall YetAnotherVolumeBooster", MB_YESNO|MB_ICONQUESTION) != IDYES {
 		return nil
 	}
 	if err := removeIntegration(); err != nil {
@@ -848,7 +862,11 @@ func uninstall() error {
 	cmd := exec.Command("cmd.exe", "/C", cmdLine)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	_ = cmd.Start()
-	messageBox("YetAnotherVolumeBooster was removed.\n\nEqualizer APO remains installed and can be removed separately from Windows Settings if you no longer use it.", "YetAnotherVolumeBooster", MB_OK|MB_ICONINFORMATION)
+	if unattendedSetup() {
+		setupLog("uninstall success message suppressed for unattended setup")
+	} else {
+		messageBox("YetAnotherVolumeBooster was removed.\n\nEqualizer APO remains installed and can be removed separately from Windows Settings if you no longer use it.", "YetAnotherVolumeBooster", MB_OK|MB_ICONINFORMATION)
+	}
 	return nil
 }
 
@@ -890,8 +908,8 @@ func main() {
 
 	repair := hasArg("--repair")
 	launchApp := !hasArg("--no-launch")
-	setupLog("mode: repair=%t launchApp=%t uninstall=%t", repair, launchApp, hasArg("--uninstall"))
-	if !repair {
+	setupLog("mode: repair=%t launchApp=%t uninstall=%t unattended=%t", repair, launchApp, hasArg("--uninstall"), unattendedSetup())
+	if !repair && !unattendedSetup() {
 		text := "Install YetAnotherVolumeBooster?\n\nThis installs the redesigned system-wide 100–500% gain controller with tray controls and startup options. Equalizer APO will be installed automatically if it is not already present.\n\nThe setup verifies the official installer's SHA-256 checksum before running it."
 		if messageBox(text, appName+" Setup", MB_YESNO|MB_ICONQUESTION) != IDYES {
 			return
@@ -904,10 +922,5 @@ func main() {
 		return
 	}
 
-	message := "YetAnotherVolumeBooster 1.7.0 is ready.\n\nThe emerald UI, dark mode, smooth controls, startup option, and close-to-tray setting are installed. Exiting YetAnotherVolumeBooster now resets APO gain to 100%."
-	if repair {
-		message = "YetAnotherVolumeBooster integration was repaired.\n\nThe live gain configuration was rebuilt and Windows Audio was restarted. Boost levels above 100% now use Windows 100% as their baseline."
-	}
-	setupLog("showing success message")
-	messageBox(message+"\n\nDiagnostic log:\n"+setupLogLocation(), appName, MB_OK|MB_ICONINFORMATION)
+	setupLog("setup completed successfully; success message suppressed")
 }
