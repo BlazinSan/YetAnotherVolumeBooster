@@ -77,7 +77,9 @@ func installDir() string {
 	return filepath.Join(pf, "YetAnotherVolumeBooster")
 }
 
-func gainFile() string      { return filepath.Join(equalizerAPOConfigDir(), "YetAnotherVolumeBooster", "gain.txt") }
+func gainFile() string {
+	return filepath.Join(equalizerAPOConfigDir(), "YetAnotherVolumeBooster", "gain.txt")
+}
 func apoConfigFile() string { return filepath.Join(equalizerAPOConfigDir(), "config.txt") }
 func iconFile() string      { return filepath.Join(installDir(), "YetAnotherVolumeBooster.ico") }
 func setupPath() string     { return filepath.Join(installDir(), "VolumeBoostSetup.exe") }
@@ -356,6 +358,21 @@ func main() {
 	}()
 
 	startupLaunch = hasArg("--startup")
+	if activateExistingInstance(!startupLaunch) {
+		return
+	}
+	singleInstanceHandle, alreadyRunning, err := acquireSingleInstance()
+	if err != nil {
+		logEvent("single-instance lock unavailable: %v", err)
+	} else if alreadyRunning {
+		logEvent("existing instance detected")
+		waitForExistingInstance(!startupLaunch)
+		releaseSingleInstance(singleInstanceHandle)
+		return
+	} else {
+		defer releaseSingleInstance(singleInstanceHandle)
+	}
+
 	settings = loadSettings()
 	if registryState, err := startupEnabled(); err == nil {
 		settings.StartWithWindows = registryState

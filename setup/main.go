@@ -22,8 +22,7 @@ import (
 )
 
 const (
-	appName    = "YetAnotherVolumeBooster
-"
+	appName    = "YetAnotherVolumeBooster"
 	appVersion = "1.7.0"
 
 	expectedAPOHash = "7403be7427bbe1936a40dded082829b6e217fc4f5990fee5cba501f0ae055afa"

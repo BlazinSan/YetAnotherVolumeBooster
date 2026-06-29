@@ -17,9 +17,12 @@ const (
 	STD_ERROR_HANDLE = ^uint32(11)
 
 	wsOverlapped   = 0x00000000
+	wsPopup        = 0x80000000
 	wsCaption      = 0x00C00000
 	wsSysMenu      = 0x00080000
+	wsThickFrame   = 0x00040000
 	wsMinimizeBox  = 0x00020000
+	wsMaximizeBox  = 0x00010000
 	wsClipChildren = 0x02000000
 	wsExAppWindow  = 0x00040000
 
@@ -29,16 +32,20 @@ const (
 
 	cwUseDefault = 0x80000000
 
-	swHide    = 0
-	swShow    = 5
-	swRestore = 9
+	swHide     = 0
+	swMaximize = 3
+	swShow     = 5
+	swMinimize = 6
+	swRestore  = 9
 
 	wmCreate        = 0x0001
 	wmDestroy       = 0x0002
+	wmGetMinMaxInfo = 0x0024
 	wmSize          = 0x0005
 	wmPaint         = 0x000F
 	wmClose         = 0x0010
 	wmEraseBkgnd    = 0x0014
+	wmNcHitTest     = 0x0084
 	wmCommand       = 0x0111
 	wmTimer         = 0x0113
 	wmSetIcon       = 0x0080
@@ -81,6 +88,17 @@ const (
 
 	animationTimerID = 1
 
+	titleBarHeight       = 34
+	titleButtonSize      = 16
+	titleButtonSpacing   = 5
+	titleButtonRight     = 20
+	titleButtonTop       = 8
+	titleThemeButtonSize = 28
+	titleThemeGap        = 12
+
+	htClient  = 1
+	htCaption = 2
+
 	moveFileReplaceExisting = 0x1
 	moveFileWriteThrough    = 0x8
 
@@ -97,6 +115,9 @@ const (
 	uiCloseToTray = 31
 	uiLogs        = 40
 	uiTheme       = 41
+	uiTitleClose  = 50
+	uiTitleMax    = 51
+	uiTitleMin    = 52
 )
 
 type statusKind int
@@ -207,9 +228,11 @@ var (
 	procSetCapture                    = user32.NewProc("SetCapture")
 	procReleaseCapture                = user32.NewProc("ReleaseCapture")
 	procSetForegroundWindow           = user32.NewProc("SetForegroundWindow")
+	procScreenToClient                = user32.NewProc("ScreenToClient")
 	procIsWindowVisible               = user32.NewProc("IsWindowVisible")
 	procSetWindowPos                  = user32.NewProc("SetWindowPos")
 	procSendMessageW                  = user32.NewProc("SendMessageW")
+	procIsZoomed                      = user32.NewProc("IsZoomed")
 	procLoadImageW                    = user32.NewProc("LoadImageW")
 	procDestroyIcon                   = user32.NewProc("DestroyIcon")
 
@@ -265,6 +288,9 @@ var (
 
 	startupToggleVisual  float64
 	closeToggleVisual    float64
+	titleMinVisual       float64
+	titleMaxVisual       float64
+	titleCloseVisual     float64
 	themeTransition      bool
 	themeTransitionFrom  bool
 	themeTransitionTo    bool
@@ -292,7 +318,7 @@ func lightPalette() uiPalette {
 		text:          rgb(18, 32, 28),
 		muted:         rgb(90, 106, 108),
 		border:        rgb(179, 198, 183),
-		shadow:        rgb(199, 214, 205),
+		shadow:        rgb(213, 225, 219),
 		accentDark:    rgb(10, 92, 62),
 		accent:        rgb(15, 122, 82),
 		accentLight:   rgb(31, 169, 120),
@@ -314,7 +340,7 @@ func darkPalette() uiPalette {
 		text:          rgb(240, 248, 245),
 		muted:         rgb(174, 191, 194),
 		border:        rgb(46, 78, 80),
-		shadow:        rgb(6, 14, 15),
+		shadow:        rgb(12, 24, 25),
 		accentDark:    rgb(14, 107, 73),
 		accent:        rgb(24, 154, 108),
 		accentLight:   rgb(90, 209, 168),
@@ -357,22 +383,21 @@ func boolFloat(value bool) float64 {
 func logicalRect(l, t, r, b int32) rect { return rect{l, t, r, b} }
 
 var (
-	sliderRect  = logicalRect(78, 220, 682, 258)
+	sliderRect  = logicalRect(78, 194, 682, 232)
 	presetRects = []rect{
-		logicalRect(80, 290, 176, 348),
-		logicalRect(196, 290, 292, 348),
-		logicalRect(312, 290, 408, 348),
-		logicalRect(428, 290, 524, 348),
-		logicalRect(544, 290, 640, 348),
+		logicalRect(80, 276, 176, 334),
+		logicalRect(196, 276, 292, 334),
+		logicalRect(312, 276, 408, 334),
+		logicalRect(428, 276, 524, 334),
+		logicalRect(544, 276, 640, 334),
 	}
-	deviceRect     = logicalRect(140, 396, 360, 442)
-	repairRect     = logicalRect(400, 396, 620, 442)
-	startupRect    = logicalRect(80, 470, 680, 526)
-	closeTrayRect  = logicalRect(80, 538, 680, 594)
-	statusCardRect = logicalRect(80, 614, 680, 660)
-	logsRect       = logicalRect(598, 622, 660, 652)
-	warningRect    = logicalRect(195, 672, 565, 698)
-	themeRect      = logicalRect(698, 30, 734, 66)
+	deviceRect     = logicalRect(140, 382, 360, 428)
+	repairRect     = logicalRect(400, 382, 620, 428)
+	startupRect    = logicalRect(80, 454, 680, 510)
+	closeTrayRect  = logicalRect(80, 522, 680, 578)
+	statusCardRect = logicalRect(80, 604, 680, 650)
+	logsRect       = logicalRect(598, 612, 660, 642)
+	warningRect    = logicalRect(195, 666, 565, 694)
 )
 
 func scaleInt(value int32) int32 { return int32(math.Round(float64(value) * dpiScale)) }
@@ -400,6 +425,15 @@ func scaledRect(source rect) rect {
 	}
 }
 
+func scaledRawRect(source rect) rect {
+	return rect{
+		left:   scaleInt(source.left),
+		top:    scaleInt(source.top),
+		right:  scaleInt(source.right),
+		bottom: scaleInt(source.bottom),
+	}
+}
+
 func unscalePoint(x, y int32) point {
 	ox := clientLogicalOrigin()
 	return point{
@@ -408,8 +442,77 @@ func unscalePoint(x, y int32) point {
 	}
 }
 
+func unscaleRawPoint(x, y int32) point {
+	return point{
+		x: int32(math.Round(float64(x) / dpiScale)),
+		y: int32(math.Round(float64(y) / dpiScale)),
+	}
+}
+
 func pointInRect(p point, r rect) bool {
 	return p.x >= r.left && p.x < r.right && p.y >= r.top && p.y < r.bottom
+}
+
+func rawLogicalClientWidth() int32 {
+	if hwndMain == 0 {
+		return logicalClientWidth
+	}
+	var rc rect
+	procGetClientRect.Call(uintptr(hwndMain), uintptr(unsafe.Pointer(&rc)))
+	width := int32(math.Round(float64(rc.right-rc.left) / dpiScale))
+	if width < logicalClientWidth {
+		return logicalClientWidth
+	}
+	return width
+}
+
+type titleButtonSpec struct {
+	id         int
+	target     rect
+	hoverColor uintptr
+	progress   float64
+}
+
+func titleButtonRects() []titleButtonSpec {
+	right := rawLogicalClientWidth() - titleButtonRight
+	closeRect := logicalRect(right-titleButtonSize, titleButtonTop, right, titleButtonTop+titleButtonSize)
+	right -= titleButtonSize + titleButtonSpacing
+	maxRect := logicalRect(right-titleButtonSize, titleButtonTop, right, titleButtonTop+titleButtonSize)
+	right -= titleButtonSize + titleButtonSpacing
+	minRect := logicalRect(right-titleButtonSize, titleButtonTop, right, titleButtonTop+titleButtonSize)
+	return []titleButtonSpec{
+		{id: uiTitleClose, target: closeRect, hoverColor: rgb(191, 25, 25), progress: titleCloseVisual},
+		{id: uiTitleMax, target: maxRect, hoverColor: rgb(29, 196, 29), progress: titleMaxVisual},
+		{id: uiTitleMin, target: minRect, hoverColor: rgb(212, 212, 38), progress: titleMinVisual},
+	}
+}
+
+func titleThemeRect() rect {
+	buttons := titleButtonRects()
+	leftOfControls := rawLogicalClientWidth() - titleButtonRight
+	if len(buttons) > 0 {
+		leftOfControls = buttons[len(buttons)-1].target.left
+	}
+	right := leftOfControls - titleThemeGap
+	top := int32((titleBarHeight - titleThemeButtonSize) / 2)
+	return logicalRect(right-titleThemeButtonSize, top, right, top+titleThemeButtonSize)
+}
+
+func titleHitTest(p point) int {
+	if pointInRect(p, titleThemeRect()) {
+		return uiTheme
+	}
+	for _, button := range titleButtonRects() {
+		cx := (button.target.left + button.target.right) / 2
+		cy := (button.target.top + button.target.bottom) / 2
+		radius := (button.target.right - button.target.left) / 2
+		dx := p.x - cx
+		dy := p.y - cy
+		if dx*dx+dy*dy <= radius*radius {
+			return button.id
+		}
+	}
+	return uiNone
 }
 
 func lowordSigned(v uintptr) int32 { return int32(int16(uint16(v & 0xffff))) }
@@ -527,11 +630,39 @@ func drawLine(hdc syscall.Handle, x1, y1, x2, y2 int32, color uintptr, width int
 	procDeleteObject.Call(pen)
 }
 
+func drawRawLine(hdc syscall.Handle, x1, y1, x2, y2 int32, color uintptr, width int32) {
+	pen, _, _ := procCreatePen.Call(psSolid, uintptr(scaleInt(width)), color)
+	oldPen, _, _ := procSelectObject.Call(uintptr(hdc), pen)
+	procMoveToEx.Call(uintptr(hdc), uintptr(scaleInt(x1)), uintptr(scaleInt(y1)), 0)
+	procLineTo.Call(uintptr(hdc), uintptr(scaleInt(x2)), uintptr(scaleInt(y2)))
+	procSelectObject.Call(uintptr(hdc), oldPen)
+	procDeleteObject.Call(pen)
+}
+
 func drawCircle(hdc syscall.Handle, cx, cy, radius int32, fill uintptr) {
 	ox := clientLogicalOrigin()
 	target := rect{
 		left: scaleInt(cx - radius + ox), top: scaleInt(cy - radius),
 		right: scaleInt(cx + radius + ox), bottom: scaleInt(cy + radius),
+	}
+	if gdipFillCircle(target, fill) {
+		return
+	}
+	brush, _, _ := procCreateSolidBrush.Call(fill)
+	pen, _, _ := procCreatePen.Call(psSolid, 1, fill)
+	oldBrush, _, _ := procSelectObject.Call(uintptr(hdc), brush)
+	oldPen, _, _ := procSelectObject.Call(uintptr(hdc), pen)
+	procEllipse.Call(uintptr(hdc), uintptr(target.left), uintptr(target.top), uintptr(target.right), uintptr(target.bottom))
+	procSelectObject.Call(uintptr(hdc), oldBrush)
+	procSelectObject.Call(uintptr(hdc), oldPen)
+	procDeleteObject.Call(brush)
+	procDeleteObject.Call(pen)
+}
+
+func drawRawCircle(hdc syscall.Handle, cx, cy, radius int32, fill uintptr) {
+	target := rect{
+		left: scaleInt(cx - radius), top: scaleInt(cy - radius),
+		right: scaleInt(cx + radius), bottom: scaleInt(cy + radius),
 	}
 	if gdipFillCircle(target, fill) {
 		return
@@ -594,8 +725,8 @@ func drawSlider(hdc syscall.Handle) {
 	knob := scaledRect(logicalRect(knobXLogical-13, knobYLogical-13, knobXLogical+13, knobYLogical+13))
 	gdipStrokeCircle(knob, mixColor(palette.border, palette.accent, 0.25), scaleInt(1))
 
-	drawText(hdc, "100%", scaledRect(logicalRect(78, 261, 150, 280)), fontSmall, palette.muted, dtLeft|dtVCenter|dtSingleLine)
-	drawText(hdc, "500%", scaledRect(logicalRect(610, 261, 682, 280)), fontSmall, palette.muted, dtRight|dtVCenter|dtSingleLine)
+	drawText(hdc, "100%", scaledRect(logicalRect(78, 236, 150, 255)), fontSmall, palette.muted, dtLeft|dtVCenter|dtSingleLine)
+	drawText(hdc, "500%", scaledRect(logicalRect(610, 236, 682, 255)), fontSmall, palette.muted, dtRight|dtVCenter|dtSingleLine)
 }
 
 func drawPresetButton(hdc syscall.Handle, index int, percent int) {
@@ -738,8 +869,8 @@ func drawStatusCard(hdc syscall.Handle) {
 	r := scaledRect(statusCardRect)
 	fillRoundRect(hdc, r, 14, palette.card)
 	strokeRoundRect(hdc, r, 14, palette.border, 1)
-	drawCircle(hdc, 103, 637, 5, toneColor(currentStatusTone))
-	drawText(hdc, statusText, scaledRect(logicalRect(120, 614, 585, 660)), fontStatus, palette.text, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
+	drawCircle(hdc, 103, 627, 5, toneColor(currentStatusTone))
+	drawText(hdc, statusText, scaledRect(logicalRect(120, 604, 585, 650)), fontStatus, palette.text, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
 
 	logs := scaledRect(logsRect)
 	fill := palette.cardSoft
@@ -754,59 +885,89 @@ func drawWarning(hdc syscall.Handle) {
 	r := scaledRect(warningRect)
 	fillRoundRect(hdc, r, 11, palette.warningBG)
 	strokeRoundRect(hdc, r, 11, palette.warningBorder, 1)
-	drawCircle(hdc, 216, 685, 7, palette.warning)
-	drawText(hdc, "!", scaledRect(logicalRect(209, 678, 223, 692)), fontSmall, palette.card, dtCenter|dtVCenter|dtSingleLine)
-	drawText(hdc, "Protect your hearing. 300–500% may clip or distort.", scaledRect(logicalRect(230, 672, 552, 698)), fontSmall, palette.warningText, dtCenter|dtVCenter|dtSingleLine)
+	drawCircle(hdc, 216, 680, 7, palette.warning)
+	drawText(hdc, "!", scaledRect(logicalRect(209, 673, 223, 687)), fontSmall, palette.card, dtCenter|dtVCenter|dtSingleLine)
+	drawText(hdc, "Protect your hearing. 300–500% may clip or distort.", scaledRect(logicalRect(230, 666, 552, 694)), fontSmall, palette.warningText, dtCenter|dtVCenter|dtSingleLine)
+}
+
+func drawTitleButton(hdc syscall.Handle, button titleButtonSpec) {
+	cx := (button.target.left + button.target.right) / 2
+	cy := (button.target.top + button.target.bottom) / 2
+	radius := (button.target.right - button.target.left) / 2
+	color := mixColor(rgb(28, 33, 28), button.hoverColor, button.progress)
+	drawRawCircle(hdc, cx, cy, radius, color)
 }
 
 func drawThemeButton(hdc syscall.Handle, dark bool) {
-	r := scaledRect(themeRect)
+	target := titleThemeRect()
+	r := scaledRawRect(target)
 	fill := palette.card
 	if hoverElement == uiTheme {
 		fill = palette.cardSoft
 	}
 	fillRoundRect(hdc, r, 18, fill)
 	strokeRoundRect(hdc, r, 18, palette.border, 1)
-	cx := (themeRect.left + themeRect.right) / 2
-	cy := (themeRect.top + themeRect.bottom) / 2
+	cx := (target.left + target.right) / 2
+	cy := (target.top + target.bottom) / 2
 	if dark {
 		// Crescent moon.
-		drawCircle(hdc, cx-1, cy, 8, palette.accentLight)
-		drawCircle(hdc, cx+3, cy-3, 7, palette.card)
+		drawRawCircle(hdc, cx-1, cy, 7, palette.accentLight)
+		drawRawCircle(hdc, cx+3, cy-3, 6, palette.card)
 		return
 	}
 	// Sun with simple radial rays.
-	drawCircle(hdc, cx, cy, 6, palette.accent)
+	drawRawCircle(hdc, cx, cy, 5, palette.accent)
 	for _, d := range [][2]int32{{0, -11}, {0, 11}, {-11, 0}, {11, 0}, {-8, -8}, {8, -8}, {-8, 8}, {8, 8}} {
 		x1 := cx + d[0]*7/11
 		y1 := cy + d[1]*7/11
-		drawLine(hdc, x1, y1, cx+d[0], cy+d[1], palette.accent, 1)
+		drawRawLine(hdc, x1, y1, cx+d[0], cy+d[1], palette.accent, 1)
 	}
+}
+
+func drawTitleBar(hdc syscall.Handle, client rect, dark bool) {
+	titleBar := rect{left: 0, top: 0, right: client.right, bottom: scaleInt(titleBarHeight)}
+	titleColor := rgb(51, 102, 102)
+	titleTextColor := rgb(0, 0, 0)
+	separatorColor := rgb(200, 200, 200)
+	if dark {
+		titleColor = rgb(61, 117, 117)
+		titleTextColor = rgb(240, 240, 240)
+		separatorColor = rgb(60, 60, 60)
+	}
+	brush, _, _ := procCreateSolidBrush.Call(titleColor)
+	procFillRect.Call(uintptr(hdc), uintptr(unsafe.Pointer(&titleBar)), brush)
+	procDeleteObject.Call(brush)
+
+	drawText(hdc, appTitle, scaledRawRect(logicalRect(22, 5, rawLogicalClientWidth()-150, titleBarHeight-5)), fontButton, titleTextColor, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
+	drawThemeButton(hdc, dark)
+	for _, button := range titleButtonRects() {
+		drawTitleButton(hdc, button)
+	}
+	drawRawLine(hdc, 0, titleBarHeight, rawLogicalClientWidth(), titleBarHeight, separatorColor, 1)
 }
 
 func drawUIScene(hdc syscall.Handle, client rect, dark bool) {
 	setPalette(dark)
 	drawBackground(hdc, client)
+	drawTitleBar(hdc, client, dark)
 
-	drawText(hdc, "YetAnotherVolumeBooster", scaledRect(logicalRect(0, 28, 760, 68)), fontTitle, palette.text, dtCenter|dtVCenter|dtSingleLine)
-	drawText(hdc, "SYSTEM-WIDE GAIN", scaledRect(logicalRect(0, 66, 760, 88)), fontSmall, palette.muted, dtCenter|dtVCenter|dtSingleLine)
-	drawThemeButton(hdc, dark)
+	drawText(hdc, "System-wide gain", scaledRect(logicalRect(0, 48, 760, 70)), fontSmall, palette.muted, dtCenter|dtVCenter|dtSingleLine)
 
 	shownPct := int(math.Round(displayPct))
-	drawText(hdc, fmt.Sprintf("%d%%", shownPct), scaledRect(logicalRect(80, 84, 680, 192)), fontValue, palette.text, dtCenter|dtVCenter|dtSingleLine)
-	drawText(hdc, fmt.Sprintf("%+.2f dB", percentToDB(currentPct)), scaledRect(logicalRect(530, 112, 675, 142)), fontDB, palette.text, dtRight|dtVCenter|dtSingleLine)
+	drawText(hdc, fmt.Sprintf("%d%%", shownPct), scaledRect(logicalRect(80, 70, 680, 168)), fontValue, palette.text, dtCenter|dtVCenter|dtSingleLine)
+	drawText(hdc, fmt.Sprintf("%+.2f dB", percentToDB(currentPct)), scaledRect(logicalRect(530, 104, 675, 134)), fontDB, palette.text, dtRight|dtVCenter|dtSingleLine)
 
 	drawSlider(hdc)
 	for i, pct := range []int{100, 200, 300, 400, 500} {
 		drawPresetButton(hdc, i, pct)
 	}
 
-	drawLine(hdc, 80, 374, 680, 374, palette.border, 1)
-	drawActionButton(hdc, deviceRect, uiDevice, "Device setup")
-	drawActionButton(hdc, repairRect, uiRepair, "Repair integration")
+	drawLine(hdc, 80, 360, 680, 360, palette.border, 1)
+	drawActionButton(hdc, deviceRect, uiDevice, "Audio devices")
+	drawActionButton(hdc, repairRect, uiRepair, "Repair")
 
-	drawSettingRow(hdc, startupRect, uiStartup, "Start with Windows", "Launches quietly in the system tray", startupToggleVisual)
-	drawSettingRow(hdc, closeTrayRect, uiCloseToTray, "Close button minimizes to tray", "Exit resets gain to 100% and stops boosting", closeToggleVisual)
+	drawSettingRow(hdc, startupRect, uiStartup, "Start with Windows", "Launch quietly in the tray", startupToggleVisual)
+	drawSettingRow(hdc, closeTrayRect, uiCloseToTray, "Close to tray", "Exit still resets gain to 100%", closeToggleVisual)
 	drawStatusCard(hdc)
 	drawWarning(hdc)
 }
@@ -829,9 +990,10 @@ func drawUI(hdc syscall.Handle, client rect) {
 		elapsed = 1
 	}
 	ease := 1 - math.Pow(1-elapsed, 3)
-	centerX := scaleInt((themeRect.left+themeRect.right)/2 + clientLogicalOrigin())
-	centerY := scaleInt((themeRect.top + themeRect.bottom) / 2)
-	maxRadius := scaleInt(1050)
+	theme := titleThemeRect()
+	centerX := scaleInt((theme.left + theme.right) / 2)
+	centerY := scaleInt((theme.top + theme.bottom) / 2)
+	maxRadius := int32(math.Ceil(math.Hypot(float64(client.right), float64(client.bottom))))
 	radius := int32(math.Round(float64(maxRadius) * ease))
 	region, _, _ := procCreateEllipticRgn.Call(
 		uintptr(centerX-radius), uintptr(centerY-radius),
@@ -895,10 +1057,14 @@ func hitTest(p point) int {
 	if pointInRect(p, logsRect) {
 		return uiLogs
 	}
-	if pointInRect(p, themeRect) {
-		return uiTheme
-	}
 	return uiNone
+}
+
+func hitTestAll(raw, content point) int {
+	if id := titleHitTest(raw); id != uiNone {
+		return id
+	}
+	return hitTest(content)
 }
 
 func setPercentFromMouse(p point) {
@@ -944,6 +1110,16 @@ func executeElement(id int) {
 		openLogs()
 	case uiTheme:
 		beginThemeSwitch()
+	case uiTitleMin:
+		procShowWindow.Call(uintptr(hwndMain), swMinimize)
+	case uiTitleMax:
+		if zoomed, _, _ := procIsZoomed.Call(uintptr(hwndMain)); zoomed != 0 {
+			procShowWindow.Call(uintptr(hwndMain), swRestore)
+		} else {
+			procShowWindow.Call(uintptr(hwndMain), swMaximize)
+		}
+	case uiTitleClose:
+		procSendMessageW.Call(uintptr(hwndMain), wmClose, 0, 0)
 	}
 }
 
@@ -957,13 +1133,14 @@ func trackMouse(hwnd syscall.Handle) {
 }
 
 func onMouseMove(hwnd syscall.Handle, lParam uintptr) {
+	raw := unscaleRawPoint(lowordSigned(lParam), hiwordSigned(lParam))
 	p := unscalePoint(lowordSigned(lParam), hiwordSigned(lParam))
 	trackMouse(hwnd)
 	if isDragging {
 		setPercentFromMouse(p)
 		return
 	}
-	newHover := hitTest(p)
+	newHover := hitTestAll(raw, p)
 	if newHover != hoverElement {
 		hoverElement = newHover
 		invalidateWindow()
@@ -971,8 +1148,9 @@ func onMouseMove(hwnd syscall.Handle, lParam uintptr) {
 }
 
 func onMouseDown(hwnd syscall.Handle, lParam uintptr) {
+	raw := unscaleRawPoint(lowordSigned(lParam), hiwordSigned(lParam))
 	p := unscalePoint(lowordSigned(lParam), hiwordSigned(lParam))
-	pressedElement = hitTest(p)
+	pressedElement = hitTestAll(raw, p)
 	if pressedElement == uiSlider {
 		isDragging = true
 		procSetCapture.Call(uintptr(hwnd))
@@ -982,6 +1160,7 @@ func onMouseDown(hwnd syscall.Handle, lParam uintptr) {
 }
 
 func onMouseUp(lParam uintptr) {
+	raw := unscaleRawPoint(lowordSigned(lParam), hiwordSigned(lParam))
 	p := unscalePoint(lowordSigned(lParam), hiwordSigned(lParam))
 	if isDragging {
 		setPercentFromMouse(p)
@@ -994,7 +1173,7 @@ func onMouseUp(lParam uintptr) {
 	}
 	id := pressedElement
 	pressedElement = uiNone
-	if id != uiNone && hitTest(p) == id {
+	if id != uiNone && hitTestAll(raw, p) == id {
 		executeElement(id)
 	}
 	invalidateWindow()
@@ -1012,6 +1191,7 @@ func beginThemeSwitch() {
 	if err := saveSettings(settings); err != nil {
 		logEvent("theme setting save failed: %v", err)
 	}
+	setDWMStyle(hwndMain)
 	logEvent("theme switch begin: dark=%t", settings.DarkMode)
 	invalidateWindow()
 }
@@ -1024,6 +1204,25 @@ func easeVisual(value, target float64) float64 {
 	return value + delta*0.24
 }
 
+func easeTitleButton(value float64, active bool) float64 {
+	target := 0.0
+	if active {
+		target = 1
+	}
+	if value < target {
+		value += 0.2
+		if value > target {
+			return target
+		}
+	} else if value > target {
+		value -= 0.2
+		if value < target {
+			return target
+		}
+	}
+	return value
+}
+
 func tickAnimation() {
 	animationPhase = (animationPhase + 1) % 10000
 	delta := float64(targetPct) - displayPct
@@ -1034,6 +1233,9 @@ func tickAnimation() {
 	}
 	startupToggleVisual = easeVisual(startupToggleVisual, boolFloat(settings.StartWithWindows))
 	closeToggleVisual = easeVisual(closeToggleVisual, boolFloat(settings.CloseToTray))
+	titleMinVisual = easeTitleButton(titleMinVisual, hoverElement == uiTitleMin || pressedElement == uiTitleMin)
+	titleMaxVisual = easeTitleButton(titleMaxVisual, hoverElement == uiTitleMax || pressedElement == uiTitleMax)
+	titleCloseVisual = easeTitleButton(titleCloseVisual, hoverElement == uiTitleClose || pressedElement == uiTitleClose)
 	if themeTransition && time.Since(themeTransitionStart) >= 460*time.Millisecond {
 		themeTransition = false
 		setPalette(settings.DarkMode)
@@ -1108,6 +1310,19 @@ func wndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr) (resul
 	case wmEraseBkgnd:
 		return 1
 
+	case wmNcHitTest:
+		screenPoint := point{x: lowordSigned(lParam), y: hiwordSigned(lParam)}
+		procScreenToClient.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&screenPoint)))
+		raw := unscaleRawPoint(screenPoint.x, screenPoint.y)
+		if titleHitTest(raw) != uiNone {
+			return htClient
+		}
+		if raw.y >= 0 && raw.y < titleBarHeight {
+			return htCaption
+		}
+		r, _, _ := procDefWindowProcW.Call(uintptr(hwnd), uintptr(message), wParam, lParam)
+		return r
+
 	case wmMouseMove:
 		onMouseMove(hwnd, lParam)
 		return 0
@@ -1144,6 +1359,12 @@ func wndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr) (resul
 		if wParam == sizeMinimized && settings.CloseToTray {
 			hideWindowToTray()
 		}
+		return 0
+
+	case wmGetMinMaxInfo:
+		info := (*minMaxInfo)(unsafe.Pointer(lParam))
+		info.ptMinTrackSize.x = scaleInt(logicalClientWidth)
+		info.ptMinTrackSize.y = scaleInt(logicalClientHeight)
 		return 0
 
 	case wmDpiChanged:
@@ -1198,7 +1419,7 @@ func runWindow() error {
 
 	hInst, _, _ := procGetModuleHandleW.Call(0)
 	cursor, _, _ := procLoadCursorW.Call(0, idcArrow)
-	className := utf16("VolumeBoostMainWindowV3")
+	className := utf16(appWindowClassName)
 	wndProcCallback = syscall.NewCallback(wndProc)
 	classIcon := loadAppIcon()
 	wc := wndClassEx{
@@ -1223,7 +1444,7 @@ func runWindow() error {
 	clientWidth := scaleInt(logicalClientWidth)
 	clientHeight := scaleInt(logicalClientHeight)
 	windowRect := rect{0, 0, clientWidth, clientHeight}
-	style := uintptr(wsOverlapped | wsCaption | wsSysMenu | wsMinimizeBox | wsClipChildren)
+	style := uintptr(wsPopup | wsSysMenu | wsMinimizeBox | wsMaximizeBox | wsClipChildren)
 	procAdjustWindowRectEx.Call(uintptr(unsafe.Pointer(&windowRect)), style, 0, wsExAppWindow)
 	windowWidth := windowRect.right - windowRect.left
 	windowHeight := windowRect.bottom - windowRect.top
