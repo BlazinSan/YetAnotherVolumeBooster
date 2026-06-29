@@ -18,6 +18,9 @@ const (
 	layoutSidePadding   = 80
 	layoutMaxLift       = 220
 	pillRadius          = 999
+	sliderRailHeight    = 20
+	sliderRailRadius    = 8
+	sliderThumbRadius   = 8
 
 	STD_ERROR_HANDLE = ^uint32(11)
 
@@ -854,33 +857,33 @@ func controlVisual(id int) float64 {
 	return 0
 }
 
+func sliderRail(slider rect) rect {
+	cy := (slider.top + slider.bottom) / 2
+	return logicalRect(slider.left, cy-sliderRailHeight/2, slider.right, cy+sliderRailHeight/2)
+}
+
 func sliderTravel(slider rect) (int32, int32, int32) {
-	track := slider
-	track.left += 3
-	track.top += 3
-	track.right -= 3
-	track.bottom -= 3
-	thumbRadius := int32(11)
-	return track.left + thumbRadius + 3, track.right - thumbRadius - 3, thumbRadius
+	rail := sliderRail(slider)
+	return rail.left + sliderThumbRadius + 5, rail.right - sliderThumbRadius - 5, sliderThumbRadius
 }
 
 func drawSlider(hdc syscall.Handle, layout uiLayout) {
-	r := scaledRect(layout.sliderRect)
+	railLogical := sliderRail(layout.sliderRect)
+	r := scaledRect(railLogical)
 	shadow := r
-	shadow.top += scaleInt(4)
-	shadow.bottom += scaleInt(4)
-	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.18))
+	shadow.top += scaleInt(3)
+	shadow.bottom += scaleInt(3)
+	fillRoundRect(hdc, shadow, sliderRailRadius, mixColor(palette.shadow, palette.background, 0.24))
 
-	trackLeft := mixColor(palette.cardSoft, palette.border, 0.25)
-	trackRight := mixColor(palette.cardSoft, palette.accentLight, 0.18)
-	trackBorder := mixColor(palette.border, palette.card, 0.35)
-	fillRoundRect(hdc, r, pillRadius, trackBorder)
+	trackFill := mixColor(palette.cardSoft, palette.border, 0.18)
+	trackBorder := mixColor(palette.border, palette.card, 0.28)
+	fillRoundRect(hdc, r, sliderRailRadius, trackBorder)
 	track := r
 	track.left += scaleInt(1)
 	track.top += scaleInt(1)
 	track.right -= scaleInt(1)
 	track.bottom -= scaleInt(1)
-	fillGradientRoundRect(hdc, track, pillRadius, trackLeft, trackRight)
+	fillRoundRect(hdc, track, sliderRailRadius, trackFill)
 
 	position := (displayPct - 100.0) / 400.0
 	if position < 0 {
@@ -892,23 +895,35 @@ func drawSlider(hdc syscall.Handle, layout uiLayout) {
 
 	travelLeft, travelRight, thumbRadius := sliderTravel(layout.sliderRect)
 	knobXLogical := travelLeft + int32(math.Round(float64(travelRight-travelLeft)*position))
-	knobYLogical := (layout.sliderRect.top + layout.sliderRect.bottom) / 2
+	knobYLogical := (railLogical.top + railLogical.bottom) / 2
 
 	if position > 0.001 {
 		active := track
-		active.right = scaleInt(knobXLogical)
-		minWidth := scaleInt(24)
+		active.right = scaleInt(knobXLogical + thumbRadius)
+		minWidth := scaleInt(sliderThumbRadius*2 + 6)
 		if active.right-active.left < minWidth {
 			active.right = active.left + minWidth
 		}
 		if active.right > track.right {
 			active.right = track.right
 		}
-		fillGradientRoundRect(hdc, active, pillRadius, palette.accentDark, palette.accentLight)
+		fillGradientRoundRect(hdc, active, sliderRailRadius, palette.accentDark, palette.accentLight)
 	}
 
-	drawCircle(hdc, knobXLogical, knobYLogical+1, thumbRadius, mixColor(palette.shadow, palette.background, 0.16))
-	drawCircle(hdc, knobXLogical, knobYLogical, thumbRadius-1, palette.card)
+	for i := 0; i < 5; i++ {
+		t := float64(i) / 4.0
+		tickX := travelLeft + int32(math.Round(float64(travelRight-travelLeft)*t))
+		tickColor := mixColor(palette.muted, trackFill, 0.58)
+		if t <= position {
+			tickColor = mixColor(palette.card, palette.accentLight, 0.38)
+		}
+		drawCircle(hdc, tickX, knobYLogical, 2, tickColor)
+	}
+
+	drawCircle(hdc, knobXLogical, knobYLogical+1, thumbRadius, mixColor(palette.shadow, palette.background, 0.24))
+	drawCircle(hdc, knobXLogical, knobYLogical, thumbRadius, mixColor(palette.border, palette.accent, 0.34))
+	drawCircle(hdc, knobXLogical, knobYLogical, thumbRadius-2, palette.card)
+	drawCircle(hdc, knobXLogical, knobYLogical, thumbRadius-5, mixColor(palette.accentLight, palette.accent, 0.35))
 
 	drawText(hdc, "100%", scaledRect(layout.sliderStartLabel), fontSmall, palette.muted, dtLeft|dtVCenter|dtSingleLine)
 	drawText(hdc, "500%", scaledRect(layout.sliderEndLabel), fontSmall, palette.muted, dtRight|dtVCenter|dtSingleLine)
