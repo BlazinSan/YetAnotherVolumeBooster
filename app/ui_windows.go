@@ -24,6 +24,7 @@ const (
 	sliderRailRadius    = 9
 	sliderThumbWidth    = 28
 	sliderThumbHeight   = 16
+	sliderThumbInset    = 6
 
 	STD_ERROR_HANDLE = ^uint32(11)
 
@@ -268,6 +269,7 @@ var (
 	procIsZoomed                      = user32.NewProc("IsZoomed")
 	procAnimateWindow                 = user32.NewProc("AnimateWindow")
 	procLoadImageW                    = user32.NewProc("LoadImageW")
+	procDrawIconEx                    = user32.NewProc("DrawIconEx")
 	procDestroyIcon                   = user32.NewProc("DestroyIcon")
 
 	procGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
@@ -709,7 +711,7 @@ func destroyFonts() {
 func createFonts() {
 	destroyFonts()
 	fontTitle = createFont(27, 600, "Segoe UI Variable Display")
-	fontBrand = createFont(17, 700, "Trebuchet MS")
+	fontBrand = createFont(18, 700, "Aptos Display")
 	fontValue = createFont(78, 400, "Segoe UI Variable Display")
 	fontDB = createFont(16, 500, "Segoe UI Variable Text")
 	fontButton = createFont(15, 600, "Segoe UI Variable Text")
@@ -890,7 +892,7 @@ func sliderRail(slider rect) rect {
 func sliderTravel(slider rect) (int32, int32, int32) {
 	rail := sliderRail(slider)
 	thumbHalfWidth := int32(sliderThumbWidth / 2)
-	return rail.left + thumbHalfWidth, rail.right - thumbHalfWidth, thumbHalfWidth
+	return rail.left + thumbHalfWidth + sliderThumbInset, rail.right - thumbHalfWidth - sliderThumbInset, thumbHalfWidth
 }
 
 func drawSlider(hdc syscall.Handle, layout uiLayout) {
@@ -1005,14 +1007,13 @@ func drawActionIcon(hdc syscall.Handle, kind int, centerX, centerY int32, color 
 		drawLine(hdc, centerX, centerY+6, centerX, centerY+9, color, 1)
 		return
 	}
-	spark := mixColor(color, palette.accentLight, 0.32)
-	drawSoftLine(hdc, centerX-10, centerY+8, centerX+4, centerY-6, color, 3)
-	drawCircle(hdc, centerX-10, centerY+8, 3, color)
-	drawCircle(hdc, centerX+4, centerY-6, 2, spark)
-	drawSoftLine(hdc, centerX+9, centerY-10, centerX+9, centerY-4, spark, 1)
-	drawSoftLine(hdc, centerX+6, centerY-7, centerX+12, centerY-7, spark, 1)
-	drawCircle(hdc, centerX+11, centerY+3, 2, mixColor(spark, palette.card, 0.20))
-	drawCircle(hdc, centerX-1, centerY-11, 1, mixColor(spark, palette.card, 0.14))
+	drawSoftLine(hdc, centerX-9, centerY+8, centerX+4, centerY-5, color, 3)
+	drawCircle(hdc, centerX-10, centerY+9, 4, color)
+	drawCircle(hdc, centerX-10, centerY+9, 2, palette.card)
+	drawSoftLine(hdc, centerX+4, centerY-5, centerX+10, centerY-11, color, 2)
+	drawSoftLine(hdc, centerX+5, centerY-4, centerX+12, centerY-7, color, 2)
+	drawCircle(hdc, centerX+4, centerY-5, 3, color)
+	drawCircle(hdc, centerX+10, centerY-9, 3, palette.card)
 }
 
 func drawActionButton(hdc syscall.Handle, target rect, id int, label string) {
@@ -1146,6 +1147,24 @@ func drawTitleButton(hdc syscall.Handle, button titleButtonSpec) {
 	drawRawCircle(hdc, cx, cy, radius, color)
 }
 
+func drawTitleIcon(hdc syscall.Handle, x, y, size int32, fallbackColor uintptr) {
+	if windowIcon != 0 {
+		procDrawIconEx.Call(
+			uintptr(hdc),
+			uintptr(scaleInt(x)),
+			uintptr(scaleInt(y)),
+			uintptr(windowIcon),
+			uintptr(scaleInt(size)),
+			uintptr(scaleInt(size)),
+			0,
+			0,
+			diNormal,
+		)
+		return
+	}
+	drawRawCircle(hdc, x+size/2, y+size/2, size/3, fallbackColor)
+}
+
 func drawThemeButton(hdc syscall.Handle, target rect, dark bool) {
 	r := scaledRect(target)
 	visual := controlVisual(uiTheme)
@@ -1198,12 +1217,8 @@ func drawTitleBar(hdc syscall.Handle, client rect, dark bool) {
 	procFillRect.Call(uintptr(hdc), uintptr(unsafe.Pointer(&titleBar)), brush)
 	procDeleteObject.Call(brush)
 
-	markX := int32(24)
-	markY := int32(titleBarHeight / 2)
-	drawRawCircle(hdc, markX, markY, 6, mixColor(titleTextColor, rgb(90, 209, 168), 0.42))
-	drawRawCircle(hdc, markX+8, markY-4, 2, mixColor(titleTextColor, rgb(90, 209, 168), 0.20))
-	drawRawCircle(hdc, markX+9, markY+5, 1, mixColor(titleTextColor, rgb(90, 209, 168), 0.10))
-	drawText(hdc, appTitle, scaledRawRect(logicalRect(40, 0, rawLogicalClientWidth()-110, titleBarHeight)), fontBrand, titleTextColor, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
+	drawTitleIcon(hdc, 18, 10, 20, mixColor(titleTextColor, rgb(90, 209, 168), 0.36))
+	drawText(hdc, appTitle, scaledRawRect(logicalRect(46, 0, rawLogicalClientWidth()-110, titleBarHeight)), fontBrand, titleTextColor, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
 	for _, button := range titleButtonRects() {
 		drawTitleButton(hdc, button)
 	}
@@ -1491,11 +1506,17 @@ func animatedControlIDs() []int {
 	}
 }
 
-func updateControlVisuals() {
+func updateControlVisuals() bool {
+	changed := false
 	for _, id := range animatedControlIDs() {
 		active := hoverElement == id || pressedElement == id
-		controlVisuals[id] = easeVisual(controlVisuals[id], boolFloat(active))
+		next := easeVisual(controlVisuals[id], boolFloat(active))
+		if next != controlVisuals[id] {
+			changed = true
+		}
+		controlVisuals[id] = next
 	}
+	return changed
 }
 
 func easeTitleButton(value float64, active bool) float64 {
@@ -1518,27 +1539,50 @@ func easeTitleButton(value float64, active bool) float64 {
 }
 
 func tickAnimation() {
+	needsPaint := false
 	animationPhase = (animationPhase + 1) % 10000
 	delta := float64(targetPct) - displayPct
 	if math.Abs(delta) > 0.08 {
 		displayPct += delta * 0.24
+		needsPaint = true
 	} else {
+		if displayPct != float64(targetPct) {
+			needsPaint = true
+		}
 		displayPct = float64(targetPct)
 	}
-	startupToggleVisual = easeVisual(startupToggleVisual, boolFloat(settings.StartWithWindows))
-	closeToggleVisual = easeVisual(closeToggleVisual, boolFloat(settings.CloseToTray))
-	updateControlVisuals()
-	titleMinVisual = easeTitleButton(titleMinVisual, hoverElement == uiTitleMin || pressedElement == uiTitleMin)
-	titleMaxVisual = easeTitleButton(titleMaxVisual, hoverElement == uiTitleMax || pressedElement == uiTitleMax)
-	titleCloseVisual = easeTitleButton(titleCloseVisual, hoverElement == uiTitleClose || pressedElement == uiTitleClose)
+	nextStartup := easeVisual(startupToggleVisual, boolFloat(settings.StartWithWindows))
+	nextClose := easeVisual(closeToggleVisual, boolFloat(settings.CloseToTray))
+	if nextStartup != startupToggleVisual || nextClose != closeToggleVisual {
+		needsPaint = true
+	}
+	startupToggleVisual = nextStartup
+	closeToggleVisual = nextClose
+	if updateControlVisuals() {
+		needsPaint = true
+	}
+	nextTitleMin := easeTitleButton(titleMinVisual, hoverElement == uiTitleMin || pressedElement == uiTitleMin)
+	nextTitleMax := easeTitleButton(titleMaxVisual, hoverElement == uiTitleMax || pressedElement == uiTitleMax)
+	nextTitleClose := easeTitleButton(titleCloseVisual, hoverElement == uiTitleClose || pressedElement == uiTitleClose)
+	if nextTitleMin != titleMinVisual || nextTitleMax != titleMaxVisual || nextTitleClose != titleCloseVisual {
+		needsPaint = true
+	}
+	titleMinVisual = nextTitleMin
+	titleMaxVisual = nextTitleMax
+	titleCloseVisual = nextTitleClose
 	if themeTransition && time.Since(themeTransitionStart) >= themeTransitionDuration {
 		themeTransition = false
 		setPalette(settings.DarkMode)
 		setDWMStyle(hwndMain)
 		logEvent("theme switch complete: dark=%t", settings.DarkMode)
+		needsPaint = true
+	} else if themeTransition {
+		needsPaint = true
 	}
 	updateTrayAnimation(animationPhase)
-	invalidateWindow()
+	if needsPaint {
+		invalidateWindow()
+	}
 }
 
 func setDWMStyle(hwnd syscall.Handle) {

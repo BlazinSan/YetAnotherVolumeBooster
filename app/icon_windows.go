@@ -12,6 +12,7 @@ const (
 	imageIcon      = 1
 	lrLoadFromFile = 0x00000010
 	lrDefaultSize  = 0x00000040
+	diNormal       = 0x0003
 	dibRGBColors   = 0
 	biRGB          = 0
 )

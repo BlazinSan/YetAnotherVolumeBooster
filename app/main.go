@@ -260,7 +260,7 @@ func openDeviceSetup() {
 		showError("Could not open device setup.")
 		return
 	}
-	setStatus("Device setup opened · finish in the selector", toneReady)
+	setStatus("Audio setup opened · finish onboarding", toneReady)
 }
 
 func repairIntegration() {
@@ -273,7 +273,7 @@ func repairIntegration() {
 		showError("Could not start the repair process.")
 		return
 	}
-	setStatus("Repair started · finish device setup", toneReady)
+	setStatus("Repair started · finish audio onboarding", toneReady)
 }
 
 func openLogs() {

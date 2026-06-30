@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"syscall"
@@ -33,8 +34,24 @@ const (
 	MB_ICONQUESTION    = 0x00000020
 	MB_ICONINFORMATION = 0x00000040
 	MB_TOPMOST         = 0x00040000
+	IDCANCEL           = 2
 	IDYES              = 6
 	SW_SHOWNORMAL      = 1
+
+	imageIcon      = 1
+	lrLoadFromFile = 0x00000010
+
+	tdfUseHIconMain            = 0x0002
+	tdfAllowDialogCancel       = 0x0008
+	tdfUseCommandLinks         = 0x0010
+	tdfSizeToContent           = 0x01000000
+	taskOpenApp          int32 = 1001
+	taskOpenSound        int32 = 1002
+	taskDone             int32 = 1003
+	taskReasonAudio      int32 = 2001
+	taskReasonDesign     int32 = 2002
+	taskReasonNoNeed     int32 = 2003
+	taskReasonSkip       int32 = 2004
 )
 
 var (
@@ -54,10 +71,14 @@ var (
 
 	user32  = syscall.NewLazyDLL("user32.dll")
 	shell32 = syscall.NewLazyDLL("shell32.dll")
+	comctl  = syscall.NewLazyDLL("comctl32.dll")
 
 	procMessageBoxW  = user32.NewProc("MessageBoxW")
+	procLoadImageW   = user32.NewProc("LoadImageW")
+	procDestroyIcon  = user32.NewProc("DestroyIcon")
 	procShellExecute = shell32.NewProc("ShellExecuteW")
 	procIsUserAdmin  = shell32.NewProc("IsUserAnAdmin")
+	procTaskDialog   = comctl.NewProc("TaskDialogIndirect")
 )
 
 func utf16(s string) *uint16 { return syscall.StringToUTF16Ptr(s) }
@@ -70,6 +91,201 @@ func messageBox(text, title string, flags uintptr) int {
 		flags|MB_TOPMOST,
 	)
 	return int(r)
+}
+
+type taskDialogButton struct {
+	nButtonID     int32
+	pszButtonText *uint16
+}
+
+type taskDialogConfig struct {
+	cbSize                  uint32
+	hwndParent              syscall.Handle
+	hInstance               syscall.Handle
+	dwFlags                 uint32
+	dwCommonButtons         uint32
+	pszWindowTitle          *uint16
+	hMainIcon               uintptr
+	pszMainInstruction      *uint16
+	pszContent              *uint16
+	cButtons                uint32
+	pButtons                *taskDialogButton
+	nDefaultButton          int32
+	cRadioButtons           uint32
+	pRadioButtons           uintptr
+	nDefaultRadioButton     int32
+	pszVerificationText     *uint16
+	pszExpandedInformation  *uint16
+	pszExpandedControlText  *uint16
+	pszCollapsedControlText *uint16
+	hFooterIcon             uintptr
+	pszFooter               *uint16
+	pfCallback              uintptr
+	lpCallbackData          uintptr
+	cxWidth                 uint32
+}
+
+type taskChoice struct {
+	id   int32
+	text string
+}
+
+func loadDialogIcon() syscall.Handle {
+	if !fileExists(iconPath()) {
+		return 0
+	}
+	h, _, _ := procLoadImageW.Call(
+		0,
+		uintptr(unsafe.Pointer(utf16(iconPath()))),
+		imageIcon,
+		32,
+		32,
+		lrLoadFromFile,
+	)
+	return syscall.Handle(h)
+}
+
+func showTaskDialog(title, instruction, content, footer string, choices []taskChoice, defaultID int32) (int32, error) {
+	buttons := make([]taskDialogButton, len(choices))
+	buttonText := make([]*uint16, len(choices))
+	for i, choice := range choices {
+		buttonText[i] = utf16(choice.text)
+		buttons[i] = taskDialogButton{nButtonID: choice.id, pszButtonText: buttonText[i]}
+	}
+
+	icon := loadDialogIcon()
+	if icon != 0 {
+		defer procDestroyIcon.Call(uintptr(icon))
+	}
+	flags := uint32(tdfAllowDialogCancel | tdfUseCommandLinks | tdfSizeToContent)
+	if icon != 0 {
+		flags |= tdfUseHIconMain
+	}
+
+	var clicked int32
+	config := taskDialogConfig{
+		cbSize:             uint32(unsafe.Sizeof(taskDialogConfig{})),
+		dwFlags:            flags,
+		pszWindowTitle:     utf16(title),
+		hMainIcon:          uintptr(icon),
+		pszMainInstruction: utf16(instruction),
+		pszContent:         utf16(content),
+		cButtons:           uint32(len(buttons)),
+		pButtons:           &buttons[0],
+		nDefaultButton:     defaultID,
+		pszFooter:          utf16(footer),
+		cxWidth:            0,
+	}
+	hr, _, callErr := procTaskDialog.Call(
+		uintptr(unsafe.Pointer(&config)),
+		uintptr(unsafe.Pointer(&clicked)),
+		0,
+		0,
+	)
+	runtime.KeepAlive(buttonText)
+	runtime.KeepAlive(buttons)
+	runtime.KeepAlive(config)
+	if hr != 0 {
+		setupLog("TaskDialogIndirect failed: HRESULT=0x%08X err=%v", uint32(hr), callErr)
+		messageBox(instruction+"\n\n"+content, title, MB_OK|MB_ICONINFORMATION)
+		return defaultID, fmt.Errorf("TaskDialogIndirect failed: HRESULT 0x%08X", uint32(hr))
+	}
+	return clicked, nil
+}
+
+func shellOpen(path, params string) error {
+	r, _, callErr := procShellExecute.Call(
+		0,
+		uintptr(unsafe.Pointer(utf16("open"))),
+		uintptr(unsafe.Pointer(utf16(path))),
+		uintptr(unsafe.Pointer(utf16(params))),
+		0,
+		SW_SHOWNORMAL,
+	)
+	if r <= 32 {
+		return fmt.Errorf("ShellExecute result %d: %w", r, callErr)
+	}
+	return nil
+}
+
+func openWindowsSoundSettings() {
+	if err := shellOpen("ms-settings:sound", ""); err != nil {
+		setupLog("ms-settings:sound failed: %v", err)
+		if fallbackErr := shellOpen("control.exe", "mmsys.cpl"); fallbackErr != nil {
+			setupLog("control mmsys.cpl fallback failed: %v", fallbackErr)
+		}
+	}
+}
+
+func showAudioOnboarding(status string) bool {
+	content := "YetAnotherVolumeBooster updated its managed Equalizer APO gain file and config include. The app is ready for live 100-500% control."
+	if status != "" {
+		content += "\n\n" + status
+	}
+	choice, err := showTaskDialog(
+		appName+" Audio Setup",
+		"Audio engine connected",
+		content,
+		"Tip: if you switch headphones, speakers, or Bluetooth output, open Windows sound settings and pick the output you want to boost.",
+		[]taskChoice{
+			{taskOpenApp, "Open YetAnotherVolumeBooster\nStart or focus the boosted volume controller now."},
+			{taskOpenSound, "Open Windows sound settings\nChoose your active playback output before testing boost."},
+			{taskDone, "Done\nClose setup and keep the current audio configuration."},
+		},
+		taskOpenApp,
+	)
+	if err != nil {
+		setupLog("audio onboarding fallback used: %v", err)
+	}
+	switch choice {
+	case taskOpenSound:
+		openWindowsSoundSettings()
+		return false
+	case taskOpenApp:
+		if err := launchControllerDetached(appPath()); err != nil {
+			setupLog("audio onboarding app launch failed: %v", err)
+			return false
+		}
+		return true
+	case IDCANCEL, 0:
+		setupLog("audio onboarding closed without an action")
+		return false
+	default:
+		return false
+	}
+}
+
+func showUninstallFeedback() bool {
+	choice, err := showTaskDialog(
+		"Uninstall "+appName,
+		"We are sad to see you go",
+		"Tell us quickly what made you uninstall this app so we can improve it.",
+		"Your answer is saved only to the local setup log on this laptop.",
+		[]taskChoice{
+			{taskReasonAudio, "Audio setup did not work\nAPO configuration, devices, or repair felt unreliable."},
+			{taskReasonDesign, "The app experience felt off\nUI, smoothness, controls, or polish were not good enough."},
+			{taskReasonNoNeed, "I no longer need it\nThe app worked, but I am cleaning up or using something else."},
+			{taskReasonSkip, "Skip and uninstall\nRemove YetAnotherVolumeBooster now."},
+		},
+		taskReasonSkip,
+	)
+	if err != nil {
+		setupLog("uninstall feedback fallback used: %v", err)
+	}
+	reason := "skipped"
+	switch choice {
+	case taskReasonAudio:
+		reason = "audio setup did not work"
+	case taskReasonDesign:
+		reason = "app experience felt off"
+	case taskReasonNoNeed:
+		reason = "no longer needed"
+	case IDCANCEL, 0:
+		setupLog("uninstall cancelled from feedback dialog")
+		return false
+	}
+	setupLog("uninstall feedback: %s", reason)
+	return true
 }
 
 func isAdmin() bool {
@@ -814,25 +1030,28 @@ func installOrRepair(repair bool, launchApp bool) error {
 		}
 	}
 
+	openedFromOnboarding := false
 	if repair || apoInstalledOrRepaired || apoWasPresent {
 		if unattendedSetup() {
-			setupLog("unattended setup: skipping device selector so YetAnotherVolumeBooster can open immediately")
+			setupLog("unattended setup: skipping audio onboarding so YetAnotherVolumeBooster can open immediately")
 		} else {
-			setupLog("opening device selector through isolated Qt launcher")
-			if err := runDeviceSelector(); err != nil {
-				return fmt.Errorf("open Equalizer APO device selector: %w", err)
-			}
+			audioStatus := "Equalizer APO configuration was updated."
 			if err := restartAudioService(); err != nil {
 				setupLog("automatic audio-service restart failed; a Windows restart is required: %v", err)
-				messageBox("The audio device configuration was saved, but Windows Audio could not be restarted automatically.\n\nRestart Windows once before testing YetAnotherVolumeBooster.", appName, MB_OK|MB_ICONINFORMATION)
+				audioStatus = "Windows Audio could not be restarted automatically. Restart Windows once if boost does not affect the selected output."
+			} else {
+				audioStatus = "Windows Audio was restarted so the updated Equalizer APO config can take effect."
 			}
+			openedFromOnboarding = showAudioOnboarding(audioStatus)
 		}
 	}
-	if launchApp {
+	if launchApp && !openedFromOnboarding {
 		setupLog("launching controller independently: %s", appPath())
 		if err := launchControllerDetached(appPath()); err != nil {
 			return fmt.Errorf("launch YetAnotherVolumeBooster: %w", err)
 		}
+	} else if openedFromOnboarding {
+		setupLog("controller launch already requested from audio onboarding")
 	} else {
 		setupLog("controller launch skipped by --no-launch")
 	}
@@ -847,8 +1066,10 @@ func fileExists(path string) bool {
 
 func uninstall() error {
 	setupLog("uninstall requested")
-	if !unattendedSetup() && messageBox("Remove YetAnotherVolumeBooster and its gain configuration?\n\nEqualizer APO will be left installed so other audio configurations are not damaged.", "Uninstall YetAnotherVolumeBooster", MB_YESNO|MB_ICONQUESTION) != IDYES {
-		return nil
+	if !unattendedSetup() {
+		if !showUninstallFeedback() {
+			return nil
+		}
 	}
 	if err := removeIntegration(); err != nil {
 		return err
@@ -893,11 +1114,39 @@ func main() {
 	}
 
 	if hasArg("--device-selector") {
-		setupLog("mode: device-selector helper")
-		if err := runDeviceSelector(); err != nil {
-			setupLog("device selector helper failed: %v", err)
-			messageBox("Device setup could not start:\n\n"+err.Error()+"\n\nDiagnostic log:\n"+setupLogLocation()+"\n\nUse Repair integration if the Qt platform plugin is missing.", appName, MB_OK|MB_ICONERROR)
+		setupLog("mode: audio onboarding helper")
+		if err := grantDataPermissions(); err != nil {
+			setupLog("audio onboarding data permission failed: %v", err)
+			messageBox("Audio setup could not update app permissions:\n\n"+err.Error()+"\n\nDiagnostic log:\n"+setupLogLocation(), appName, MB_OK|MB_ICONERROR)
+			return
 		}
+		if err := ensureGainFile(); err != nil {
+			setupLog("audio onboarding gain file failed: %v", err)
+			messageBox("Audio setup could not update the gain file:\n\n"+err.Error()+"\n\nDiagnostic log:\n"+setupLogLocation(), appName, MB_OK|MB_ICONERROR)
+			return
+		}
+		if err := grantManagedConfigPermissions(); err != nil {
+			setupLog("audio onboarding config permission failed: %v", err)
+			messageBox("Audio setup could not update Equalizer APO permissions:\n\n"+err.Error()+"\n\nDiagnostic log:\n"+setupLogLocation(), appName, MB_OK|MB_ICONERROR)
+			return
+		}
+		if err := integrateConfig(); err != nil {
+			setupLog("audio onboarding integration failed: %v", err)
+			messageBox("Audio setup could not update Equalizer APO:\n\n"+err.Error()+"\n\nDiagnostic log:\n"+setupLogLocation(), appName, MB_OK|MB_ICONERROR)
+			return
+		}
+		status := "Equalizer APO configuration was updated."
+		if err := restartAudioService(); err != nil {
+			setupLog("audio onboarding audio-service restart failed: %v", err)
+			status = "Windows Audio could not be restarted automatically. Restart Windows once if boost does not affect the selected output."
+		} else {
+			status = "Windows Audio was restarted so the updated Equalizer APO config can take effect."
+		}
+		if unattendedSetup() {
+			setupLog("unattended audio onboarding helper: UI suppressed")
+			return
+		}
+		showAudioOnboarding(status)
 		return
 	}
 
