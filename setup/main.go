@@ -815,13 +815,15 @@ func installOrRepair(repair bool, launchApp bool) error {
 	}
 
 	if repair || apoInstalledOrRepaired || apoWasPresent {
-		setupLog("opening device selector through isolated Qt launcher")
-		if err := runDeviceSelector(); err != nil {
-			return fmt.Errorf("open Equalizer APO device selector: %w", err)
-		}
-		if err := restartAudioService(); err != nil {
-			setupLog("automatic audio-service restart failed; a Windows restart is required: %v", err)
-			if !unattendedSetup() {
+		if unattendedSetup() {
+			setupLog("unattended setup: skipping device selector so YetAnotherVolumeBooster can open immediately")
+		} else {
+			setupLog("opening device selector through isolated Qt launcher")
+			if err := runDeviceSelector(); err != nil {
+				return fmt.Errorf("open Equalizer APO device selector: %w", err)
+			}
+			if err := restartAudioService(); err != nil {
+				setupLog("automatic audio-service restart failed; a Windows restart is required: %v", err)
 				messageBox("The audio device configuration was saved, but Windows Audio could not be restarted automatically.\n\nRestart Windows once before testing YetAnotherVolumeBooster.", appName, MB_OK|MB_ICONINFORMATION)
 			}
 		}

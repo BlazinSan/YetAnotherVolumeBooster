@@ -13,14 +13,17 @@ import (
 const (
 	logicalClientWidth  = 760
 	logicalClientHeight = 700
-	layoutMinContent    = 600
+	minClientWidth      = 500
+	minClientHeight     = 530
+	layoutMinContent    = 420
 	layoutMaxContent    = 1040
 	layoutSidePadding   = 80
 	layoutMaxLift       = 220
 	pillRadius          = 999
 	sliderRailHeight    = 22
 	sliderRailRadius    = 9
-	sliderThumbRadius   = 10
+	sliderThumbWidth    = 28
+	sliderThumbHeight   = 16
 
 	STD_ERROR_HANDLE = ^uint32(11)
 
@@ -108,14 +111,15 @@ const (
 
 	animationTimerID = 1
 
-	titleBarHeight       = 34
-	titleButtonSize      = 16
-	titleButtonSpacing   = 5
-	titleButtonRight     = 20
-	titleButtonTop       = 8
-	titleThemeButtonSize = 28
-	titleThemeGap        = 12
-	resizeBorder         = 8
+	titleBarHeight          = 40
+	titleButtonSize         = 16
+	titleButtonSpacing      = 7
+	titleButtonRight        = 22
+	titleButtonTop          = 12
+	contentThemeWidth       = 58
+	contentThemeHeight      = 30
+	resizeBorder            = 8
+	themeTransitionDuration = 340 * time.Millisecond
 
 	htClient      = 1
 	htCaption     = 2
@@ -422,6 +426,7 @@ type uiLayout struct {
 	labelRect                 rect
 	valueRect                 rect
 	dbRect                    rect
+	themeRect                 rect
 	sliderRect                rect
 	sliderStartLabel          rect
 	sliderEndLabel            rect
@@ -506,11 +511,11 @@ func rawLogicalClientSize() (int32, int32) {
 	procGetClientRect.Call(uintptr(hwndMain), uintptr(unsafe.Pointer(&rc)))
 	width := int32(math.Round(float64(rc.right-rc.left) / dpiScale))
 	height := int32(math.Round(float64(rc.bottom-rc.top) / dpiScale))
-	if width < logicalClientWidth {
-		width = logicalClientWidth
+	if width < minClientWidth {
+		width = minClientWidth
 	}
-	if height < logicalClientHeight {
-		height = logicalClientHeight
+	if height < minClientHeight {
+		height = minClientHeight
 	}
 	return width, height
 }
@@ -524,19 +529,39 @@ func currentLayout() uiLayout {
 		left = 36
 	}
 	right := left + contentWidth
-	topShift := clampInt32((rawHeight-logicalClientHeight)/2, 0, layoutMaxLift)
+	scaleY := 1.0
+	if rawHeight < logicalClientHeight {
+		base := float64(logicalClientHeight - titleBarHeight)
+		available := float64(rawHeight - titleBarHeight - 16)
+		scaleY = available / base
+		if scaleY < 0.72 {
+			scaleY = 0.72
+		}
+		if scaleY > 1 {
+			scaleY = 1
+		}
+	}
+	topShift := int32(0)
+	if rawHeight >= logicalClientHeight {
+		topShift = clampInt32((rawHeight-logicalClientHeight)/2, 0, layoutMaxLift)
+	}
+	ly := func(y int32) int32 {
+		return titleBarHeight + int32(math.Round(float64(y-titleBarHeight)*scaleY)) + topShift
+	}
 	center := (left + right) / 2
 
 	presetGap := clampInt32(contentWidth/34, 20, 32)
 	presetWidth := (contentWidth - presetGap*4) / 5
 	presets := make([]rect, 5)
-	presetTop := int32(276) + topShift
+	presetTop := ly(276)
+	presetHeight := ly(334) - presetTop
 	for i := range presets {
 		x := left + int32(i)*(presetWidth+presetGap)
-		presets[i] = logicalRect(x, presetTop, x+presetWidth, presetTop+58)
+		presets[i] = logicalRect(x, presetTop, x+presetWidth, presetTop+presetHeight)
 	}
 
-	actionTop := int32(382) + topShift
+	actionTop := ly(382)
+	actionBottom := ly(428)
 	actionInset := clampInt32(contentWidth/14, 0, 56)
 	actionGap := clampInt32(contentWidth/12, 46, 74)
 	actionWidth := (contentWidth - actionInset*2 - actionGap) / 2
@@ -544,35 +569,37 @@ func currentLayout() uiLayout {
 		actionInset = 0
 		actionWidth = (contentWidth - actionGap) / 2
 	}
-	device := logicalRect(left+actionInset, actionTop, left+actionInset+actionWidth, actionTop+46)
-	repair := logicalRect(right-actionInset-actionWidth, actionTop, right-actionInset, actionTop+46)
+	device := logicalRect(left+actionInset, actionTop, left+actionInset+actionWidth, actionBottom)
+	repair := logicalRect(right-actionInset-actionWidth, actionTop, right-actionInset, actionBottom)
 
-	status := logicalRect(left, 604+topShift, right, 650+topShift)
-	logs := logicalRect(right-82, 612+topShift, right-20, 642+topShift)
+	status := logicalRect(left, ly(604), right, ly(650))
+	logs := logicalRect(right-82, ly(612), right-20, ly(642))
 	warningWidth := clampInt32(contentWidth*62/100, 370, 520)
 	warningLeft := center - warningWidth/2
-	warningTop := int32(666) + topShift
-	warning := logicalRect(warningLeft, warningTop, warningLeft+warningWidth, warningTop+28)
-	warningIcon := point{x: warning.left + 22, y: warning.top + 14}
+	warningTop := ly(666)
+	warning := logicalRect(warningLeft, warningTop, warningLeft+warningWidth, ly(694))
+	warningIcon := point{x: warning.left + 22, y: (warning.top + warning.bottom) / 2}
+	theme := logicalRect(right-contentThemeWidth, ly(54), right, ly(54)+contentThemeHeight)
 
 	return uiLayout{
 		contentLeft:       left,
 		contentRight:      right,
 		topShift:          topShift,
-		labelRect:         logicalRect(left, 48+topShift, right, 70+topShift),
-		valueRect:         logicalRect(left, 70+topShift, right, 168+topShift),
-		dbRect:            logicalRect(right-180, 104+topShift, right-8, 134+topShift),
-		sliderRect:        logicalRect(left, 194+topShift, right, 232+topShift),
-		sliderStartLabel:  logicalRect(left, 236+topShift, left+110, 255+topShift),
-		sliderEndLabel:    logicalRect(right-110, 236+topShift, right, 255+topShift),
+		labelRect:         logicalRect(left, ly(48), right, ly(70)),
+		valueRect:         logicalRect(left, ly(70), right, ly(168)),
+		dbRect:            logicalRect(right-180, ly(104), right-8, ly(134)),
+		themeRect:         theme,
+		sliderRect:        logicalRect(left, ly(194), right, ly(232)),
+		sliderStartLabel:  logicalRect(left, ly(236), left+110, ly(255)),
+		sliderEndLabel:    logicalRect(right-110, ly(236), right, ly(255)),
 		presetRects:       presets,
 		dividerLeft:       left,
 		dividerRight:      right,
-		dividerY:          360 + topShift,
+		dividerY:          ly(360),
 		deviceRect:        device,
 		repairRect:        repair,
-		startupRect:       logicalRect(left, 454+topShift, right, 510+topShift),
-		closeTrayRect:     logicalRect(left, 522+topShift, right, 578+topShift),
+		startupRect:       logicalRect(left, ly(454), right, ly(510)),
+		closeTrayRect:     logicalRect(left, ly(522), right, ly(578)),
 		statusCardRect:    status,
 		logsRect:          logs,
 		warningRect:       warning,
@@ -603,21 +630,7 @@ func titleButtonRects() []titleButtonSpec {
 	}
 }
 
-func titleThemeRect() rect {
-	buttons := titleButtonRects()
-	leftOfControls := rawLogicalClientWidth() - titleButtonRight
-	if len(buttons) > 0 {
-		leftOfControls = buttons[len(buttons)-1].target.left
-	}
-	right := leftOfControls - titleThemeGap
-	top := int32((titleBarHeight - titleThemeButtonSize) / 2)
-	return logicalRect(right-titleThemeButtonSize, top, right, top+titleThemeButtonSize)
-}
-
 func titleHitTest(p point) int {
-	if pointInRect(p, titleThemeRect()) {
-		return uiTheme
-	}
 	for _, button := range titleButtonRects() {
 		cx := (button.target.left + button.target.right) / 2
 		cy := (button.target.top + button.target.bottom) / 2
@@ -696,7 +709,7 @@ func destroyFonts() {
 func createFonts() {
 	destroyFonts()
 	fontTitle = createFont(27, 600, "Segoe UI Variable Display")
-	fontBrand = createFont(16, 700, "Bahnschrift SemiBold")
+	fontBrand = createFont(17, 700, "Trebuchet MS")
 	fontValue = createFont(78, 400, "Segoe UI Variable Display")
 	fontDB = createFont(16, 500, "Segoe UI Variable Text")
 	fontButton = createFont(15, 600, "Segoe UI Variable Text")
@@ -876,7 +889,8 @@ func sliderRail(slider rect) rect {
 
 func sliderTravel(slider rect) (int32, int32, int32) {
 	rail := sliderRail(slider)
-	return rail.left + sliderThumbRadius + 5, rail.right - sliderThumbRadius - 5, sliderThumbRadius
+	thumbHalfWidth := int32(sliderThumbWidth / 2)
+	return rail.left + thumbHalfWidth, rail.right - thumbHalfWidth, thumbHalfWidth
 }
 
 func drawSlider(hdc syscall.Handle, layout uiLayout) {
@@ -905,14 +919,14 @@ func drawSlider(hdc syscall.Handle, layout uiLayout) {
 		position = 1
 	}
 
-	travelLeft, travelRight, thumbRadius := sliderTravel(layout.sliderRect)
+	travelLeft, travelRight, thumbHalfWidth := sliderTravel(layout.sliderRect)
 	knobXLogical := travelLeft + int32(math.Round(float64(travelRight-travelLeft)*position))
 	knobYLogical := (railLogical.top + railLogical.bottom) / 2
 
 	if position > 0.001 {
 		active := track
-		active.right = scaleInt(knobXLogical + thumbRadius)
-		minWidth := scaleInt(sliderThumbRadius*2 + 6)
+		active.right = scaleInt(knobXLogical + thumbHalfWidth)
+		minWidth := scaleInt(sliderThumbWidth + 6)
 		if active.right-active.left < minWidth {
 			active.right = active.left + minWidth
 		}
@@ -932,12 +946,25 @@ func drawSlider(hdc syscall.Handle, layout uiLayout) {
 		drawCircle(hdc, tickX, knobYLogical, 2, tickColor)
 	}
 
-	thumbFill := mixColor(palette.card, palette.accentLight, 0.34)
-	thumbCore := mixColor(palette.accentLight, palette.accent, 0.22)
-	drawCircle(hdc, knobXLogical, knobYLogical+2, thumbRadius-1, mixColor(palette.shadow, palette.background, 0.24))
-	drawCircle(hdc, knobXLogical, knobYLogical, thumbRadius, thumbFill)
-	drawCircle(hdc, knobXLogical-3, knobYLogical-3, 3, mixColor(thumbFill, palette.card, 0.34))
-	drawCircle(hdc, knobXLogical, knobYLogical, 3, thumbCore)
+	thumb := scaledRect(logicalRect(
+		knobXLogical-sliderThumbWidth/2,
+		knobYLogical-sliderThumbHeight/2,
+		knobXLogical+sliderThumbWidth/2,
+		knobYLogical+sliderThumbHeight/2,
+	))
+	thumbShadow := thumb
+	thumbShadow.top += scaleInt(2)
+	thumbShadow.bottom += scaleInt(2)
+	fillRoundRect(hdc, thumbShadow, sliderThumbHeight/2, mixColor(palette.shadow, palette.background, 0.20))
+	thumbLeft := mixColor(palette.card, palette.accentLight, 0.30)
+	thumbRight := mixColor(palette.accentLight, palette.card, 0.36)
+	fillGradientRoundRect(hdc, thumb, sliderThumbHeight/2, thumbLeft, thumbRight)
+	thumbHighlight := thumb
+	thumbHighlight.left += scaleInt(5)
+	thumbHighlight.top += scaleInt(4)
+	thumbHighlight.right = thumbHighlight.left + scaleInt(5)
+	thumbHighlight.bottom = thumbHighlight.top + scaleInt(3)
+	fillRoundRect(hdc, thumbHighlight, 3, mixColor(palette.card, palette.accentLight, 0.48))
 
 	drawText(hdc, "100%", scaledRect(layout.sliderStartLabel), fontSmall, palette.muted, dtLeft|dtVCenter|dtSingleLine)
 	drawText(hdc, "500%", scaledRect(layout.sliderEndLabel), fontSmall, palette.muted, dtRight|dtVCenter|dtSingleLine)
@@ -962,11 +989,7 @@ func drawPresetButton(hdc syscall.Handle, target rect, id int, percent int) {
 	if pressed {
 		fill = mixColor(fill, palette.border, 0.16)
 	}
-	border := mixColor(palette.border, fill, 0.40)
-	if active {
-		border = mixColor(palette.accent, fill, 0.18)
-	}
-	fillStrokeRoundRect(hdc, r, pillRadius, fill, border, 1)
+	fillRoundRect(hdc, r, pillRadius, fill)
 	color := palette.text
 	if active {
 		color = palette.accent
@@ -982,12 +1005,14 @@ func drawActionIcon(hdc syscall.Handle, kind int, centerX, centerY int32, color 
 		drawLine(hdc, centerX, centerY+6, centerX, centerY+9, color, 1)
 		return
 	}
-	drawSoftLine(hdc, centerX-7, centerY+7, centerX+3, centerY-3, color, 3)
-	drawCircle(hdc, centerX-8, centerY+8, 3, color)
-	drawCircle(hdc, centerX-8, centerY+8, 1, palette.card)
-	drawSoftLine(hdc, centerX+2, centerY-4, centerX+8, centerY-9, color, 2)
-	drawSoftLine(hdc, centerX+3, centerY-3, centerX+9, centerY+2, color, 2)
-	drawCircle(hdc, centerX+3, centerY-3, 2, color)
+	spark := mixColor(color, palette.accentLight, 0.32)
+	drawSoftLine(hdc, centerX-10, centerY+8, centerX+4, centerY-6, color, 3)
+	drawCircle(hdc, centerX-10, centerY+8, 3, color)
+	drawCircle(hdc, centerX+4, centerY-6, 2, spark)
+	drawSoftLine(hdc, centerX+9, centerY-10, centerX+9, centerY-4, spark, 1)
+	drawSoftLine(hdc, centerX+6, centerY-7, centerX+12, centerY-7, spark, 1)
+	drawCircle(hdc, centerX+11, centerY+3, 2, mixColor(spark, palette.card, 0.20))
+	drawCircle(hdc, centerX-1, centerY-11, 1, mixColor(spark, palette.card, 0.14))
 }
 
 func drawActionButton(hdc syscall.Handle, target rect, id int, label string) {
@@ -1003,8 +1028,7 @@ func drawActionButton(hdc syscall.Handle, target rect, id int, label string) {
 	if pressed {
 		fill = mixColor(fill, palette.border, 0.16)
 	}
-	border := mixColor(palette.border, fill, 0.42)
-	fillStrokeRoundRect(hdc, r, pillRadius, fill, border, 1)
+	fillRoundRect(hdc, r, pillRadius, fill)
 	iconX := target.left + 28
 	iconY := (target.top + target.bottom) / 2
 	iconColor := mixColor(palette.muted, palette.accent, visual*0.42)
@@ -1021,25 +1045,31 @@ func drawToggle(hdc syscall.Handle, centerX, centerY int32, progress float64, ho
 		progress = 1
 	}
 	motion := progress * progress * (3 - 2*progress)
-	target := scaledRect(logicalRect(centerX-29, centerY-15, centerX+29, centerY+15))
-	offColor := mixColor(palette.border, palette.cardSoft, 0.28)
+	target := scaledRect(logicalRect(centerX-32, centerY-16, centerX+32, centerY+16))
+	offColor := mixColor(palette.border, palette.cardSoft, 0.48)
 	if hovered {
-		offColor = mixColor(offColor, palette.accent, 0.12)
+		offColor = mixColor(offColor, palette.accent, 0.10)
 	}
-	onColor := mixColor(palette.accentDark, palette.accentLight, 0.45)
-	fill := mixColor(offColor, onColor, progress)
 	shadow := target
 	shadow.top += scaleInt(2)
 	shadow.bottom += scaleInt(2)
-	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.26))
-	fillRoundRect(hdc, target, pillRadius, fill)
-	knobX := centerX - 14 + int32(math.Round(28*motion))
-	knobFill := mixColor(palette.cardSoft, palette.card, 0.18)
-	if progress > 0.55 {
-		knobFill = mixColor(palette.card, palette.accentLight, 0.44)
+	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.30))
+	if progress > 0.02 {
+		onLeft := mixColor(palette.accentDark, palette.accent, 0.24)
+		onRight := mixColor(palette.accentLight, palette.accent, 0.18)
+		base := mixColor(offColor, onLeft, progress)
+		fillGradientRoundRect(hdc, target, pillRadius, base, mixColor(offColor, onRight, progress))
+	} else {
+		fillRoundRect(hdc, target, pillRadius, offColor)
 	}
-	drawCircle(hdc, knobX, centerY+1, 11, mixColor(palette.shadow, fill, 0.18))
-	drawCircle(hdc, knobX, centerY, 10, knobFill)
+	knobX := centerX - 16 + int32(math.Round(32*motion))
+	knobFill := mixColor(palette.card, palette.cardSoft, 0.26)
+	if progress > 0.55 {
+		knobFill = mixColor(palette.card, palette.accentLight, 0.22)
+	}
+	drawCircle(hdc, knobX, centerY+1, 12, mixColor(palette.shadow, palette.background, 0.22))
+	drawCircle(hdc, knobX, centerY, 11, knobFill)
+	drawCircle(hdc, knobX-3, centerY-4, 3, mixColor(knobFill, palette.card, 0.36))
 }
 
 func drawSettingRow(hdc syscall.Handle, target rect, id int, title, subtitle string, progress float64) {
@@ -1047,10 +1077,19 @@ func drawSettingRow(hdc syscall.Handle, target rect, id int, title, subtitle str
 	visual := controlVisual(id)
 	fill := palette.card
 	fill = mixColor(fill, palette.cardSoft, visual*0.82)
-	fillStrokeRoundRect(hdc, r, pillRadius, fill, mixColor(palette.border, fill, 0.38), 1)
-	drawText(hdc, title, scaledRect(logicalRect(target.left+22, target.top+9, target.right-100, target.top+31)), fontBody, palette.text, dtLeft|dtVCenter|dtSingleLine)
-	drawText(hdc, subtitle, scaledRect(logicalRect(target.left+22, target.top+29, target.right-100, target.bottom-5)), fontSmall, palette.muted, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
-	drawToggle(hdc, target.right-49, (target.top+target.bottom)/2, progress, hoverElement == id)
+	shadow := r
+	shadow.top += scaleInt(3)
+	shadow.bottom += scaleInt(3)
+	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.22))
+	fillRoundRect(hdc, r, pillRadius, fill)
+	rowHeight := target.bottom - target.top
+	titleTop := target.top + clampInt32(rowHeight/6, 6, 9)
+	titleBottom := target.top + clampInt32(rowHeight/2, 22, 31)
+	subtitleTop := titleBottom - 1
+	subtitleBottom := target.bottom - clampInt32(rowHeight/10, 3, 5)
+	drawText(hdc, title, scaledRect(logicalRect(target.left+22, titleTop, target.right-100, titleBottom)), fontBody, palette.text, dtLeft|dtVCenter|dtSingleLine)
+	drawText(hdc, subtitle, scaledRect(logicalRect(target.left+22, subtitleTop, target.right-100, subtitleBottom)), fontSmall, palette.muted, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
+	drawToggle(hdc, target.right-50, (target.top+target.bottom)/2, progress, hoverElement == id)
 }
 
 func toneColor(tone statusKind) uintptr {
@@ -1072,7 +1111,11 @@ func drawAnimatedStatusIcon(hdc syscall.Handle, centerX, centerY int32) {
 
 func drawStatusCard(hdc syscall.Handle, layout uiLayout) {
 	r := scaledRect(layout.statusCardRect)
-	fillStrokeRoundRect(hdc, r, pillRadius, palette.card, mixColor(palette.border, palette.card, 0.36), 1)
+	shadow := r
+	shadow.top += scaleInt(2)
+	shadow.bottom += scaleInt(2)
+	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.20))
+	fillRoundRect(hdc, r, pillRadius, palette.card)
 	drawCircle(hdc, layout.statusCardRect.left+23, (layout.statusCardRect.top+layout.statusCardRect.bottom)/2, 5, toneColor(currentStatusTone))
 	drawText(hdc, statusText, scaledRect(logicalRect(layout.statusCardRect.left+48, layout.statusCardRect.top, layout.logsRect.left-16, layout.statusCardRect.bottom)), fontStatus, palette.text, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
 
@@ -1085,7 +1128,11 @@ func drawStatusCard(hdc syscall.Handle, layout uiLayout) {
 
 func drawWarning(hdc syscall.Handle, layout uiLayout) {
 	r := scaledRect(layout.warningRect)
-	fillStrokeRoundRect(hdc, r, pillRadius, palette.warningBG, mixColor(palette.warningBorder, palette.warningBG, 0.28), 1)
+	shadow := r
+	shadow.top += scaleInt(1)
+	shadow.bottom += scaleInt(1)
+	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.warningBorder, palette.background, 0.72))
+	fillRoundRect(hdc, r, pillRadius, palette.warningBG)
 	drawCircle(hdc, layout.warningIconCenter.x, layout.warningIconCenter.y, 7, palette.warning)
 	drawText(hdc, "!", scaledRect(layout.warningIconText), fontSmall, palette.card, dtCenter|dtVCenter|dtSingleLine)
 	drawText(hdc, "Protect your hearing. 300-500% may clip or distort.", scaledRect(layout.warningTextRect), fontSmall, palette.warningText, dtCenter|dtVCenter|dtSingleLine|dtEndEllipsis)
@@ -1099,31 +1146,41 @@ func drawTitleButton(hdc syscall.Handle, button titleButtonSpec) {
 	drawRawCircle(hdc, cx, cy, radius, color)
 }
 
-func drawThemeButton(hdc syscall.Handle, dark bool) {
-	target := titleThemeRect()
-	r := scaledRawRect(target)
+func drawThemeButton(hdc syscall.Handle, target rect, dark bool) {
+	r := scaledRect(target)
 	visual := controlVisual(uiTheme)
-	orbLeft := mixColor(palette.card, palette.accentLight, 0.12+visual*0.08)
-	orbRight := mixColor(palette.accentLight, palette.card, 0.48-visual*0.08)
+	shadow := r
+	shadow.top += scaleInt(2)
+	shadow.bottom += scaleInt(2)
+	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.24))
+
+	orbLeft := mixColor(palette.cardSoft, palette.accentLight, 0.14+visual*0.08)
+	orbRight := mixColor(palette.accentLight, palette.card, 0.42-visual*0.06)
 	if dark {
-		orbLeft = mixColor(palette.cardSoft, palette.accentDark, 0.32+visual*0.10)
-		orbRight = mixColor(palette.accentLight, palette.card, 0.38-visual*0.08)
+		orbLeft = mixColor(palette.cardSoft, palette.accentDark, 0.42+visual*0.08)
+		orbRight = mixColor(palette.accentLight, palette.card, 0.30-visual*0.05)
 	}
 	fillGradientRoundRect(hdc, r, pillRadius, orbLeft, orbRight)
-	cx := (target.left + target.right) / 2
-	cy := (target.top + target.bottom) / 2
+	cx := target.left + 15
 	if dark {
-		drawRawCircle(hdc, cx-2, cy, 8, palette.accentLight)
-		drawRawCircle(hdc, cx+3, cy-3, 7, orbLeft)
-		drawRawCircle(hdc, cx+8, cy+6, 1, mixColor(palette.card, palette.accentLight, 0.18))
-		drawRawCircle(hdc, cx-9, cy-7, 1, mixColor(palette.card, palette.accentLight, 0.28))
+		cx = target.right - 15
+	}
+	cy := (target.top + target.bottom) / 2
+	knobFill := mixColor(rgb(247, 252, 250), palette.card, 0.14)
+	drawCircle(hdc, cx, cy+1, 12, mixColor(palette.shadow, palette.background, 0.20))
+	drawCircle(hdc, cx, cy, 11, knobFill)
+	if dark {
+		moon := mixColor(palette.accentLight, rgb(255, 255, 255), 0.22)
+		drawCircle(hdc, cx-2, cy, 5, moon)
+		drawCircle(hdc, cx+2, cy-2, 5, knobFill)
+		drawCircle(hdc, target.left+12, target.top+8, 1, mixColor(palette.accentLight, palette.card, 0.18))
+		drawCircle(hdc, target.left+22, target.bottom-8, 1, mixColor(palette.accentLight, palette.card, 0.20))
 		return
 	}
-	sun := mixColor(palette.warning, palette.accentLight, 0.22)
-	drawRawCircle(hdc, cx, cy, 6, sun)
-	drawRawCircle(hdc, cx-2, cy-2, 2, mixColor(palette.card, sun, 0.22))
-	for _, d := range [][2]int32{{0, -10}, {0, 10}, {-10, 0}, {10, 0}, {-7, -7}, {7, -7}, {-7, 7}, {7, 7}} {
-		drawRawCircle(hdc, cx+d[0], cy+d[1], 1, mixColor(sun, palette.accent, 0.24))
+	sun := mixColor(palette.warning, palette.accentLight, 0.24)
+	drawCircle(hdc, cx, cy, 4, sun)
+	for _, d := range [][2]int32{{0, -7}, {0, 7}, {-7, 0}, {7, 0}, {-5, -5}, {5, -5}, {-5, 5}, {5, 5}} {
+		drawCircle(hdc, cx+d[0], cy+d[1], 1, mixColor(sun, palette.accent, 0.18))
 	}
 }
 
@@ -1141,8 +1198,12 @@ func drawTitleBar(hdc syscall.Handle, client rect, dark bool) {
 	procFillRect.Call(uintptr(hdc), uintptr(unsafe.Pointer(&titleBar)), brush)
 	procDeleteObject.Call(brush)
 
-	drawText(hdc, appTitle, scaledRawRect(logicalRect(24, 5, rawLogicalClientWidth()-150, titleBarHeight-4)), fontBrand, titleTextColor, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
-	drawThemeButton(hdc, dark)
+	markX := int32(24)
+	markY := int32(titleBarHeight / 2)
+	drawRawCircle(hdc, markX, markY, 6, mixColor(titleTextColor, rgb(90, 209, 168), 0.42))
+	drawRawCircle(hdc, markX+8, markY-4, 2, mixColor(titleTextColor, rgb(90, 209, 168), 0.20))
+	drawRawCircle(hdc, markX+9, markY+5, 1, mixColor(titleTextColor, rgb(90, 209, 168), 0.10))
+	drawText(hdc, appTitle, scaledRawRect(logicalRect(40, 0, rawLogicalClientWidth()-110, titleBarHeight)), fontBrand, titleTextColor, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
 	for _, button := range titleButtonRects() {
 		drawTitleButton(hdc, button)
 	}
@@ -1154,6 +1215,7 @@ func drawUIScene(hdc syscall.Handle, client rect, dark bool) {
 	drawBackground(hdc, client)
 	drawTitleBar(hdc, client, dark)
 	layout := currentLayout()
+	drawThemeButton(hdc, layout.themeRect, dark)
 
 	drawText(hdc, "System-wide gain", scaledRect(layout.labelRect), fontSmall, palette.muted, dtCenter|dtVCenter|dtSingleLine)
 
@@ -1186,15 +1248,15 @@ func drawUI(hdc syscall.Handle, client rect) {
 	// circle originating at the theme button (native equivalent of the site's
 	// circular View Transition effect).
 	drawUIScene(hdc, client, themeTransitionFrom)
-	elapsed := time.Since(themeTransitionStart).Seconds() / 0.46
+	elapsed := time.Since(themeTransitionStart).Seconds() / themeTransitionDuration.Seconds()
 	if elapsed < 0 {
 		elapsed = 0
 	}
 	if elapsed > 1 {
 		elapsed = 1
 	}
-	ease := 1 - math.Pow(1-elapsed, 3)
-	theme := titleThemeRect()
+	ease := 1 - math.Pow(1-elapsed, 4)
+	theme := currentLayout().themeRect
 	centerX := scaleInt((theme.left + theme.right) / 2)
 	centerY := scaleInt((theme.top + theme.bottom) / 2)
 	maxRadius := int32(math.Ceil(math.Hypot(float64(client.right), float64(client.bottom))))
@@ -1239,6 +1301,9 @@ func paintWindow(hwnd syscall.Handle) {
 
 func hitTest(p point) int {
 	layout := currentLayout()
+	if pointInRect(p, layout.themeRect) {
+		return uiTheme
+	}
 	if pointInRect(p, layout.sliderRect) {
 		return uiSlider
 	}
@@ -1326,12 +1391,12 @@ func executeElement(id int) {
 	case uiTheme:
 		beginThemeSwitch()
 	case uiTitleMin:
-		procSendMessageW.Call(uintptr(hwndMain), wmSysCommand, scMinimize, 0)
+		minimizeWithTransition()
 	case uiTitleMax:
 		if zoomed, _, _ := procIsZoomed.Call(uintptr(hwndMain)); zoomed != 0 {
-			procSendMessageW.Call(uintptr(hwndMain), wmSysCommand, scRestore, 0)
+			changeWindowStateWithTransition(swRestore)
 		} else {
-			procSendMessageW.Call(uintptr(hwndMain), wmSysCommand, scMaximize, 0)
+			changeWindowStateWithTransition(swMaximize)
 		}
 	case uiTitleClose:
 		procSendMessageW.Call(uintptr(hwndMain), wmSysCommand, scClose, 0)
@@ -1407,7 +1472,6 @@ func beginThemeSwitch() {
 	if err := saveSettings(settings); err != nil {
 		logEvent("theme setting save failed: %v", err)
 	}
-	setDWMStyle(hwndMain)
 	logEvent("theme switch begin: dark=%t", settings.DarkMode)
 	invalidateWindow()
 }
@@ -1467,7 +1531,7 @@ func tickAnimation() {
 	titleMinVisual = easeTitleButton(titleMinVisual, hoverElement == uiTitleMin || pressedElement == uiTitleMin)
 	titleMaxVisual = easeTitleButton(titleMaxVisual, hoverElement == uiTitleMax || pressedElement == uiTitleMax)
 	titleCloseVisual = easeTitleButton(titleCloseVisual, hoverElement == uiTitleClose || pressedElement == uiTitleClose)
-	if themeTransition && time.Since(themeTransitionStart) >= 460*time.Millisecond {
+	if themeTransition && time.Since(themeTransitionStart) >= themeTransitionDuration {
 		themeTransition = false
 		setPalette(settings.DarkMode)
 		setDWMStyle(hwndMain)
@@ -1499,6 +1563,18 @@ func animateWindow(duration uint32, flags uintptr) {
 	if hwndMain != 0 {
 		procAnimateWindow.Call(uintptr(hwndMain), uintptr(duration), flags)
 	}
+}
+
+func minimizeWithTransition() {
+	animateWindow(70, awBlend|awHide)
+	procShowWindow.Call(uintptr(hwndMain), swMinimize)
+}
+
+func changeWindowStateWithTransition(command int32) {
+	animateWindow(55, awBlend|awHide)
+	procShowWindow.Call(uintptr(hwndMain), uintptr(command))
+	animateWindow(75, awBlend|awActivate)
+	invalidateWindow()
 }
 
 func hideWindowToTray() {
@@ -1616,8 +1692,8 @@ func wndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr) (resul
 
 	case wmGetMinMaxInfo:
 		info := (*minMaxInfo)(unsafe.Pointer(lParam))
-		info.ptMinTrackSize.x = scaleInt(logicalClientWidth)
-		info.ptMinTrackSize.y = scaleInt(logicalClientHeight)
+		info.ptMinTrackSize.x = scaleInt(minClientWidth)
+		info.ptMinTrackSize.y = scaleInt(minClientHeight)
 		return 0
 
 	case wmDpiChanged:
