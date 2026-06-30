@@ -18,9 +18,9 @@ const (
 	layoutSidePadding   = 80
 	layoutMaxLift       = 220
 	pillRadius          = 999
-	sliderRailHeight    = 20
-	sliderRailRadius    = 8
-	sliderThumbRadius   = 8
+	sliderRailHeight    = 22
+	sliderRailRadius    = 9
+	sliderThumbRadius   = 10
 
 	STD_ERROR_HANDLE = ^uint32(11)
 
@@ -304,6 +304,7 @@ var (
 	wndProcCallback uintptr
 
 	fontTitle  syscall.Handle
+	fontBrand  syscall.Handle
 	fontValue  syscall.Handle
 	fontDB     syscall.Handle
 	fontButton syscall.Handle
@@ -684,17 +685,18 @@ func createFont(logicalSize int32, weight int32, face string) syscall.Handle {
 }
 
 func destroyFonts() {
-	for _, font := range []syscall.Handle{fontTitle, fontValue, fontDB, fontButton, fontBody, fontSmall, fontStatus} {
+	for _, font := range []syscall.Handle{fontTitle, fontBrand, fontValue, fontDB, fontButton, fontBody, fontSmall, fontStatus} {
 		if font != 0 {
 			procDeleteObject.Call(uintptr(font))
 		}
 	}
-	fontTitle, fontValue, fontDB, fontButton, fontBody, fontSmall, fontStatus = 0, 0, 0, 0, 0, 0, 0
+	fontTitle, fontBrand, fontValue, fontDB, fontButton, fontBody, fontSmall, fontStatus = 0, 0, 0, 0, 0, 0, 0, 0
 }
 
 func createFonts() {
 	destroyFonts()
 	fontTitle = createFont(27, 600, "Segoe UI Variable Display")
+	fontBrand = createFont(16, 700, "Bahnschrift SemiBold")
 	fontValue = createFont(78, 400, "Segoe UI Variable Display")
 	fontDB = createFont(16, 500, "Segoe UI Variable Text")
 	fontButton = createFont(15, 600, "Segoe UI Variable Text")
@@ -844,6 +846,16 @@ func drawRawCircle(hdc syscall.Handle, cx, cy, radius int32, fill uintptr) {
 	procDeleteObject.Call(pen)
 }
 
+func drawSoftLine(hdc syscall.Handle, x1, y1, x2, y2 int32, color uintptr, width int32) {
+	drawLine(hdc, x1, y1, x2, y2, color, width)
+	radius := width / 2
+	if radius < 1 {
+		radius = 1
+	}
+	drawCircle(hdc, x1, y1, radius, color)
+	drawCircle(hdc, x2, y2, radius, color)
+}
+
 func drawBackground(hdc syscall.Handle, client rect) {
 	brush, _, _ := procCreateSolidBrush.Call(palette.background)
 	procFillRect.Call(uintptr(hdc), uintptr(unsafe.Pointer(&client)), brush)
@@ -920,10 +932,12 @@ func drawSlider(hdc syscall.Handle, layout uiLayout) {
 		drawCircle(hdc, tickX, knobYLogical, 2, tickColor)
 	}
 
-	drawCircle(hdc, knobXLogical, knobYLogical+1, thumbRadius, mixColor(palette.shadow, palette.background, 0.24))
-	drawCircle(hdc, knobXLogical, knobYLogical, thumbRadius, mixColor(palette.border, palette.accent, 0.34))
-	drawCircle(hdc, knobXLogical, knobYLogical, thumbRadius-2, palette.card)
-	drawCircle(hdc, knobXLogical, knobYLogical, thumbRadius-5, mixColor(palette.accentLight, palette.accent, 0.35))
+	thumbFill := mixColor(palette.card, palette.accentLight, 0.34)
+	thumbCore := mixColor(palette.accentLight, palette.accent, 0.22)
+	drawCircle(hdc, knobXLogical, knobYLogical+2, thumbRadius-1, mixColor(palette.shadow, palette.background, 0.24))
+	drawCircle(hdc, knobXLogical, knobYLogical, thumbRadius, thumbFill)
+	drawCircle(hdc, knobXLogical-3, knobYLogical-3, 3, mixColor(thumbFill, palette.card, 0.34))
+	drawCircle(hdc, knobXLogical, knobYLogical, 3, thumbCore)
 
 	drawText(hdc, "100%", scaledRect(layout.sliderStartLabel), fontSmall, palette.muted, dtLeft|dtVCenter|dtSingleLine)
 	drawText(hdc, "500%", scaledRect(layout.sliderEndLabel), fontSmall, palette.muted, dtRight|dtVCenter|dtSingleLine)
@@ -961,8 +975,6 @@ func drawPresetButton(hdc syscall.Handle, target rect, id int, percent int) {
 }
 
 func drawActionIcon(hdc syscall.Handle, kind int, centerX, centerY int32, color uintptr) {
-	ox := clientLogicalOrigin()
-	cx := centerX + ox
 	if kind == uiDevice {
 		r := scaledRect(logicalRect(centerX-10, centerY-8, centerX+10, centerY+6))
 		strokeRoundRect(hdc, r, 4, color, 1)
@@ -970,17 +982,12 @@ func drawActionIcon(hdc syscall.Handle, kind int, centerX, centerY int32, color 
 		drawLine(hdc, centerX, centerY+6, centerX, centerY+9, color, 1)
 		return
 	}
-	pen, _, _ := procCreatePen.Call(psSolid, uintptr(scaleInt(2)), color)
-	oldPen, _, _ := procSelectObject.Call(uintptr(hdc), pen)
-	procMoveToEx.Call(uintptr(hdc), uintptr(scaleInt(cx-7)), uintptr(scaleInt(centerY+2)), 0)
-	procLineTo.Call(uintptr(hdc), uintptr(scaleInt(cx-3)), uintptr(scaleInt(centerY+7)))
-	procLineTo.Call(uintptr(hdc), uintptr(scaleInt(cx+4)), uintptr(scaleInt(centerY+6)))
-	procLineTo.Call(uintptr(hdc), uintptr(scaleInt(cx+8)), uintptr(scaleInt(centerY)))
-	procLineTo.Call(uintptr(hdc), uintptr(scaleInt(cx+5)), uintptr(scaleInt(centerY-6)))
-	procLineTo.Call(uintptr(hdc), uintptr(scaleInt(cx-2)), uintptr(scaleInt(centerY-8)))
-	procLineTo.Call(uintptr(hdc), uintptr(scaleInt(cx-7)), uintptr(scaleInt(centerY-3)))
-	procSelectObject.Call(uintptr(hdc), oldPen)
-	procDeleteObject.Call(pen)
+	drawSoftLine(hdc, centerX-7, centerY+7, centerX+3, centerY-3, color, 3)
+	drawCircle(hdc, centerX-8, centerY+8, 3, color)
+	drawCircle(hdc, centerX-8, centerY+8, 1, palette.card)
+	drawSoftLine(hdc, centerX+2, centerY-4, centerX+8, centerY-9, color, 2)
+	drawSoftLine(hdc, centerX+3, centerY-3, centerX+9, centerY+2, color, 2)
+	drawCircle(hdc, centerX+3, centerY-3, 2, color)
 }
 
 func drawActionButton(hdc syscall.Handle, target rect, id int, label string) {
@@ -1021,11 +1028,18 @@ func drawToggle(hdc syscall.Handle, centerX, centerY int32, progress float64, ho
 	}
 	onColor := mixColor(palette.accentDark, palette.accentLight, 0.45)
 	fill := mixColor(offColor, onColor, progress)
-	border := mixColor(palette.border, fill, 0.36)
-	fillStrokeRoundRect(hdc, target, pillRadius, fill, border, 1)
+	shadow := target
+	shadow.top += scaleInt(2)
+	shadow.bottom += scaleInt(2)
+	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.26))
+	fillRoundRect(hdc, target, pillRadius, fill)
 	knobX := centerX - 14 + int32(math.Round(28*motion))
-	drawCircle(hdc, knobX, centerY+1, 10, mixColor(palette.shadow, fill, 0.15))
-	drawCircle(hdc, knobX, centerY, 9, palette.card)
+	knobFill := mixColor(palette.cardSoft, palette.card, 0.18)
+	if progress > 0.55 {
+		knobFill = mixColor(palette.card, palette.accentLight, 0.44)
+	}
+	drawCircle(hdc, knobX, centerY+1, 11, mixColor(palette.shadow, fill, 0.18))
+	drawCircle(hdc, knobX, centerY, 10, knobFill)
 }
 
 func drawSettingRow(hdc syscall.Handle, target rect, id int, title, subtitle string, progress float64) {
@@ -1089,30 +1103,34 @@ func drawThemeButton(hdc syscall.Handle, dark bool) {
 	target := titleThemeRect()
 	r := scaledRawRect(target)
 	visual := controlVisual(uiTheme)
-	fill := palette.card
-	fill = mixColor(fill, palette.cardSoft, visual)
-	fillStrokeRoundRect(hdc, r, pillRadius, fill, mixColor(palette.border, fill, 0.34), 1)
+	orbLeft := mixColor(palette.card, palette.accentLight, 0.12+visual*0.08)
+	orbRight := mixColor(palette.accentLight, palette.card, 0.48-visual*0.08)
+	if dark {
+		orbLeft = mixColor(palette.cardSoft, palette.accentDark, 0.32+visual*0.10)
+		orbRight = mixColor(palette.accentLight, palette.card, 0.38-visual*0.08)
+	}
+	fillGradientRoundRect(hdc, r, pillRadius, orbLeft, orbRight)
 	cx := (target.left + target.right) / 2
 	cy := (target.top + target.bottom) / 2
 	if dark {
-		// Crescent moon.
-		drawRawCircle(hdc, cx-1, cy, 7, palette.accentLight)
-		drawRawCircle(hdc, cx+3, cy-3, 6, palette.card)
+		drawRawCircle(hdc, cx-2, cy, 8, palette.accentLight)
+		drawRawCircle(hdc, cx+3, cy-3, 7, orbLeft)
+		drawRawCircle(hdc, cx+8, cy+6, 1, mixColor(palette.card, palette.accentLight, 0.18))
+		drawRawCircle(hdc, cx-9, cy-7, 1, mixColor(palette.card, palette.accentLight, 0.28))
 		return
 	}
-	// Sun with simple radial rays.
-	drawRawCircle(hdc, cx, cy, 5, palette.accent)
-	for _, d := range [][2]int32{{0, -11}, {0, 11}, {-11, 0}, {11, 0}, {-8, -8}, {8, -8}, {-8, 8}, {8, 8}} {
-		x1 := cx + d[0]*7/11
-		y1 := cy + d[1]*7/11
-		drawRawLine(hdc, x1, y1, cx+d[0], cy+d[1], palette.accent, 1)
+	sun := mixColor(palette.warning, palette.accentLight, 0.22)
+	drawRawCircle(hdc, cx, cy, 6, sun)
+	drawRawCircle(hdc, cx-2, cy-2, 2, mixColor(palette.card, sun, 0.22))
+	for _, d := range [][2]int32{{0, -10}, {0, 10}, {-10, 0}, {10, 0}, {-7, -7}, {7, -7}, {-7, 7}, {7, 7}} {
+		drawRawCircle(hdc, cx+d[0], cy+d[1], 1, mixColor(sun, palette.accent, 0.24))
 	}
 }
 
 func drawTitleBar(hdc syscall.Handle, client rect, dark bool) {
 	titleBar := rect{left: 0, top: 0, right: client.right, bottom: scaleInt(titleBarHeight)}
 	titleColor := rgb(51, 102, 102)
-	titleTextColor := rgb(0, 0, 0)
+	titleTextColor := rgb(245, 251, 249)
 	separatorColor := rgb(200, 200, 200)
 	if dark {
 		titleColor = rgb(61, 117, 117)
@@ -1123,7 +1141,7 @@ func drawTitleBar(hdc syscall.Handle, client rect, dark bool) {
 	procFillRect.Call(uintptr(hdc), uintptr(unsafe.Pointer(&titleBar)), brush)
 	procDeleteObject.Call(brush)
 
-	drawText(hdc, appTitle, scaledRawRect(logicalRect(22, 5, rawLogicalClientWidth()-150, titleBarHeight-5)), fontButton, titleTextColor, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
+	drawText(hdc, appTitle, scaledRawRect(logicalRect(24, 5, rawLogicalClientWidth()-150, titleBarHeight-4)), fontBrand, titleTextColor, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
 	drawThemeButton(hdc, dark)
 	for _, button := range titleButtonRects() {
 		drawTitleButton(hdc, button)
