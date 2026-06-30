@@ -22,9 +22,9 @@ const (
 	pillRadius          = 999
 	sliderRailHeight    = 22
 	sliderRailRadius    = 9
-	sliderThumbWidth    = 28
-	sliderThumbHeight   = 16
-	sliderThumbInset    = 6
+	sliderThumbWidth    = 24
+	sliderThumbHeight   = 14
+	sliderThumbInset    = 14
 
 	STD_ERROR_HANDLE = ^uint32(11)
 
@@ -68,6 +68,8 @@ const (
 	wmEraseBkgnd    = 0x0014
 	wmNcCalcSize    = 0x0083
 	wmNcHitTest     = 0x0084
+	wmNcPaint       = 0x0085
+	wmNcActivate    = 0x0086
 	wmNcRButtonUp   = 0x00A5
 	wmCommand       = 0x0111
 	wmSysCommand    = 0x0112
@@ -107,6 +109,7 @@ const (
 	srccopy = 0x00CC0020
 
 	gradientFillRectH = 0x00000000
+	dwmColorNone      = 0xFFFFFFFE
 
 	tmeLeave = 0x00000002
 
@@ -928,6 +931,9 @@ func drawSlider(hdc syscall.Handle, layout uiLayout) {
 	if position > 0.001 {
 		active := track
 		active.right = scaleInt(knobXLogical + thumbHalfWidth)
+		if position > 0.999 {
+			active.right = track.right
+		}
 		minWidth := scaleInt(sliderThumbWidth + 6)
 		if active.right-active.left < minWidth {
 			active.right = active.left + minWidth
@@ -954,17 +960,13 @@ func drawSlider(hdc syscall.Handle, layout uiLayout) {
 		knobXLogical+sliderThumbWidth/2,
 		knobYLogical+sliderThumbHeight/2,
 	))
-	thumbShadow := thumb
-	thumbShadow.top += scaleInt(2)
-	thumbShadow.bottom += scaleInt(2)
-	fillRoundRect(hdc, thumbShadow, sliderThumbHeight/2, mixColor(palette.shadow, palette.background, 0.20))
 	thumbLeft := mixColor(palette.card, palette.accentLight, 0.30)
 	thumbRight := mixColor(palette.accentLight, palette.card, 0.36)
 	fillGradientRoundRect(hdc, thumb, sliderThumbHeight/2, thumbLeft, thumbRight)
 	thumbHighlight := thumb
-	thumbHighlight.left += scaleInt(5)
-	thumbHighlight.top += scaleInt(4)
-	thumbHighlight.right = thumbHighlight.left + scaleInt(5)
+	thumbHighlight.left += scaleInt(4)
+	thumbHighlight.top += scaleInt(3)
+	thumbHighlight.right = thumbHighlight.left + scaleInt(4)
 	thumbHighlight.bottom = thumbHighlight.top + scaleInt(3)
 	fillRoundRect(hdc, thumbHighlight, 3, mixColor(palette.card, palette.accentLight, 0.48))
 
@@ -1007,13 +1009,13 @@ func drawActionIcon(hdc syscall.Handle, kind int, centerX, centerY int32, color 
 		drawLine(hdc, centerX, centerY+6, centerX, centerY+9, color, 1)
 		return
 	}
-	drawSoftLine(hdc, centerX-9, centerY+8, centerX+4, centerY-5, color, 3)
-	drawCircle(hdc, centerX-10, centerY+9, 4, color)
-	drawCircle(hdc, centerX-10, centerY+9, 2, palette.card)
-	drawSoftLine(hdc, centerX+4, centerY-5, centerX+10, centerY-11, color, 2)
-	drawSoftLine(hdc, centerX+5, centerY-4, centerX+12, centerY-7, color, 2)
-	drawCircle(hdc, centerX+4, centerY-5, 3, color)
-	drawCircle(hdc, centerX+10, centerY-9, 3, palette.card)
+	drawSoftLine(hdc, centerX-10, centerY+9, centerX+5, centerY-6, color, 2)
+	drawCircle(hdc, centerX-11, centerY+10, 4, color)
+	drawCircle(hdc, centerX-11, centerY+10, 2, palette.card)
+	drawCircle(hdc, centerX+5, centerY-6, 3, color)
+	drawSoftLine(hdc, centerX+5, centerY-6, centerX+12, centerY-13, color, 2)
+	drawSoftLine(hdc, centerX+6, centerY-5, centerX+14, centerY-8, color, 2)
+	drawCircle(hdc, centerX+12, centerY-11, 2, palette.card)
 }
 
 func drawActionButton(hdc syscall.Handle, target rect, id int, label string) {
@@ -1046,15 +1048,16 @@ func drawToggle(hdc syscall.Handle, centerX, centerY int32, progress float64, ho
 		progress = 1
 	}
 	motion := progress * progress * (3 - 2*progress)
-	target := scaledRect(logicalRect(centerX-32, centerY-16, centerX+32, centerY+16))
-	offColor := mixColor(palette.border, palette.cardSoft, 0.48)
+	targetLogical := logicalRect(centerX-34, centerY-15, centerX+34, centerY+15)
+	target := scaledRect(targetLogical)
+	offColor := mixColor(palette.border, palette.cardSoft, 0.54)
 	if hovered {
 		offColor = mixColor(offColor, palette.accent, 0.10)
 	}
 	shadow := target
 	shadow.top += scaleInt(2)
 	shadow.bottom += scaleInt(2)
-	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.30))
+	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.34))
 	if progress > 0.02 {
 		onLeft := mixColor(palette.accentDark, palette.accent, 0.24)
 		onRight := mixColor(palette.accentLight, palette.accent, 0.18)
@@ -1063,14 +1066,19 @@ func drawToggle(hdc syscall.Handle, centerX, centerY int32, progress float64, ho
 	} else {
 		fillRoundRect(hdc, target, pillRadius, offColor)
 	}
-	knobX := centerX - 16 + int32(math.Round(32*motion))
+	knobX := centerX - 19 + int32(math.Round(38*motion))
 	knobFill := mixColor(palette.card, palette.cardSoft, 0.26)
 	if progress > 0.55 {
 		knobFill = mixColor(palette.card, palette.accentLight, 0.22)
 	}
-	drawCircle(hdc, knobX, centerY+1, 12, mixColor(palette.shadow, palette.background, 0.22))
-	drawCircle(hdc, knobX, centerY, 11, knobFill)
-	drawCircle(hdc, knobX-3, centerY-4, 3, mixColor(knobFill, palette.card, 0.36))
+	knob := scaledRect(logicalRect(knobX-10, centerY-10, knobX+10, centerY+10))
+	fillRoundRect(hdc, knob, 10, knobFill)
+	glint := knob
+	glint.left += scaleInt(5)
+	glint.top += scaleInt(4)
+	glint.right = glint.left + scaleInt(4)
+	glint.bottom = glint.top + scaleInt(3)
+	fillRoundRect(hdc, glint, 3, mixColor(knobFill, palette.card, 0.40))
 }
 
 func drawSettingRow(hdc syscall.Handle, target rect, id int, title, subtitle string, progress float64) {
@@ -1090,7 +1098,7 @@ func drawSettingRow(hdc syscall.Handle, target rect, id int, title, subtitle str
 	subtitleBottom := target.bottom - clampInt32(rowHeight/10, 3, 5)
 	drawText(hdc, title, scaledRect(logicalRect(target.left+22, titleTop, target.right-100, titleBottom)), fontBody, palette.text, dtLeft|dtVCenter|dtSingleLine)
 	drawText(hdc, subtitle, scaledRect(logicalRect(target.left+22, subtitleTop, target.right-100, subtitleBottom)), fontSmall, palette.muted, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
-	drawToggle(hdc, target.right-50, (target.top+target.bottom)/2, progress, hoverElement == id)
+	drawToggle(hdc, target.right-58, (target.top+target.bottom)/2, progress, hoverElement == id)
 }
 
 func toneColor(tone statusKind) uintptr {
@@ -1590,7 +1598,7 @@ func setDWMStyle(hwnd syscall.Handle) {
 	procDwmSetWindowAttribute.Call(uintptr(hwnd), 33, uintptr(unsafe.Pointer(&cornerPreference)), unsafe.Sizeof(cornerPreference))
 	setPalette(settings.DarkMode)
 	captionColor := uint32(palette.background)
-	borderColor := uint32(palette.border)
+	borderColor := uint32(dwmColorNone)
 	procDwmSetWindowAttribute.Call(uintptr(hwnd), 35, uintptr(unsafe.Pointer(&captionColor)), unsafe.Sizeof(captionColor))
 	procDwmSetWindowAttribute.Call(uintptr(hwnd), 34, uintptr(unsafe.Pointer(&borderColor)), unsafe.Sizeof(borderColor))
 	dark := uint32(0)
@@ -1671,6 +1679,13 @@ func wndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr) (resul
 
 	case wmNcCalcSize:
 		return 0
+
+	case wmNcPaint:
+		return 0
+
+	case wmNcActivate:
+		invalidateWindow()
+		return 1
 
 	case wmNcHitTest:
 		screenPoint := point{x: lowordSigned(lParam), y: hiwordSigned(lParam)}
