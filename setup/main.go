@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,6 +41,32 @@ const (
 
 	imageIcon      = 1
 	lrLoadFromFile = 0x00000010
+
+	wsOverlapped   = 0x00000000
+	wsCaption      = 0x00C00000
+	wsSysMenu      = 0x00080000
+	wsChild        = 0x40000000
+	wsVisible      = 0x10000000
+	wsTabStop      = 0x00010000
+	wsBorder       = 0x00800000
+	wsExDialog     = 0x00000001
+	wsExTopmost    = 0x00000008
+	esMultiline    = 0x0004
+	esAutovscroll  = 0x0040
+	esWantReturn   = 0x1000
+	bsDefPush      = 0x00000001
+	wmCreate       = 0x0001
+	wmDestroy      = 0x0002
+	wmCommand      = 0x0111
+	wmClose        = 0x0010
+	wmSetFont      = 0x0030
+	wmGetText      = 0x000D
+	wmGetTextLen   = 0x000E
+	cwUseDefault   = 0x80000000
+	defaultGUIFont = 17
+	idFeedbackEdit = 3001
+	idFeedbackSend = 3002
+	idFeedbackBack = 3003
 
 	tdfUseHIconMain            = 0x0002
 	tdfAllowDialogCancel       = 0x0008
@@ -73,12 +100,25 @@ var (
 	shell32 = syscall.NewLazyDLL("shell32.dll")
 	comctl  = syscall.NewLazyDLL("comctl32.dll")
 
-	procMessageBoxW  = user32.NewProc("MessageBoxW")
-	procLoadImageW   = user32.NewProc("LoadImageW")
-	procDestroyIcon  = user32.NewProc("DestroyIcon")
-	procShellExecute = shell32.NewProc("ShellExecuteW")
-	procIsUserAdmin  = shell32.NewProc("IsUserAnAdmin")
-	procTaskDialog   = comctl.NewProc("TaskDialogIndirect")
+	procMessageBoxW      = user32.NewProc("MessageBoxW")
+	procLoadImageW       = user32.NewProc("LoadImageW")
+	procDestroyIcon      = user32.NewProc("DestroyIcon")
+	procRegisterClassExW = user32.NewProc("RegisterClassExW")
+	procCreateWindowExW  = user32.NewProc("CreateWindowExW")
+	procDefWindowProcW   = user32.NewProc("DefWindowProcW")
+	procShowWindow       = user32.NewProc("ShowWindow")
+	procUpdateWindow     = user32.NewProc("UpdateWindow")
+	procGetMessageW      = user32.NewProc("GetMessageW")
+	procTranslateMessage = user32.NewProc("TranslateMessage")
+	procDispatchMessageW = user32.NewProc("DispatchMessageW")
+	procPostQuitMessage  = user32.NewProc("PostQuitMessage")
+	procDestroyWindow    = user32.NewProc("DestroyWindow")
+	procSendMessageW     = user32.NewProc("SendMessageW")
+	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
+	procGetStockObject   = syscall.NewLazyDLL("gdi32.dll").NewProc("GetStockObject")
+	procShellExecute     = shell32.NewProc("ShellExecuteW")
+	procIsUserAdmin      = shell32.NewProc("IsUserAnAdmin")
+	procTaskDialog       = comctl.NewProc("TaskDialogIndirect")
 )
 
 func utf16(s string) *uint16 { return syscall.StringToUTF16Ptr(s) }
@@ -129,6 +169,43 @@ type taskChoice struct {
 	id   int32
 	text string
 }
+
+type setupWndClassEx struct {
+	cbSize        uint32
+	style         uint32
+	lpfnWndProc   uintptr
+	cbClsExtra    int32
+	cbWndExtra    int32
+	hInstance     syscall.Handle
+	hIcon         syscall.Handle
+	hCursor       syscall.Handle
+	hbrBackground syscall.Handle
+	lpszMenuName  *uint16
+	lpszClassName *uint16
+	hIconSm       syscall.Handle
+}
+
+type setupPoint struct{ x, y int32 }
+
+type setupMsg struct {
+	hwnd    syscall.Handle
+	message uint32
+	wParam  uintptr
+	lParam  uintptr
+	time    uint32
+	pt      setupPoint
+	private uint32
+}
+
+var (
+	feedbackWndProcCallback uintptr
+	feedbackWindow          syscall.Handle
+	feedbackEdit            syscall.Handle
+	feedbackResult          string
+	feedbackAccepted        bool
+)
+
+func lowordSetup(v uintptr) int32 { return int32(v & 0xffff) }
 
 func loadDialogIcon() syscall.Handle {
 	if !fileExists(iconPath()) {
@@ -191,6 +268,175 @@ func showTaskDialog(title, instruction, content, footer string, choices []taskCh
 		return defaultID, fmt.Errorf("TaskDialogIndirect failed: HRESULT 0x%08X", uint32(hr))
 	}
 	return clicked, nil
+}
+
+func setControlFont(hwnd syscall.Handle, font uintptr) {
+	if hwnd != 0 && font != 0 {
+		procSendMessageW.Call(uintptr(hwnd), wmSetFont, font, 1)
+	}
+}
+
+func createFeedbackChild(className, text string, style uintptr, x, y, w, h int32, id int32, font uintptr) syscall.Handle {
+	hwnd, _, _ := procCreateWindowExW.Call(
+		0,
+		uintptr(unsafe.Pointer(utf16(className))),
+		uintptr(unsafe.Pointer(utf16(text))),
+		style|wsChild|wsVisible,
+		uintptr(x), uintptr(y), uintptr(w), uintptr(h),
+		uintptr(feedbackWindow), uintptr(id), 0, 0,
+	)
+	child := syscall.Handle(hwnd)
+	setControlFont(child, font)
+	return child
+}
+
+func feedbackText() string {
+	if feedbackEdit == 0 {
+		return ""
+	}
+	length, _, _ := procSendMessageW.Call(uintptr(feedbackEdit), wmGetTextLen, 0, 0)
+	buf := make([]uint16, int(length)+1)
+	if len(buf) == 0 {
+		return ""
+	}
+	procSendMessageW.Call(uintptr(feedbackEdit), wmGetText, uintptr(len(buf)), uintptr(unsafe.Pointer(&buf[0])))
+	return strings.TrimSpace(syscall.UTF16ToString(buf))
+}
+
+func feedbackWndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr) uintptr {
+	switch message {
+	case wmCreate:
+		font, _, _ := procGetStockObject.Call(defaultGUIFont)
+		createFeedbackChild("STATIC", "We are sad to see you go.", 0, 24, 20, 500, 24, 0, font)
+		createFeedbackChild("STATIC", "Tell us quickly what made you uninstall this app so we can improve it.", 0, 24, 52, 500, 22, 0, font)
+		createFeedbackChild("STATIC", "Your typed reason and basic app diagnostics are sent to hammau05@gmail.com when you click Uninstall.", 0, 24, 78, 500, 34, 0, font)
+		feedbackEdit = createFeedbackChild("EDIT", "", wsBorder|esMultiline|esAutovscroll|esWantReturn, 24, 120, 508, 118, idFeedbackEdit, font)
+		createFeedbackChild("BUTTON", "Uninstall", wsTabStop|bsDefPush, 322, 258, 100, 32, idFeedbackSend, font)
+		createFeedbackChild("BUTTON", "Cancel", wsTabStop, 432, 258, 100, 32, idFeedbackBack, font)
+		return 0
+	case wmCommand:
+		switch lowordSetup(wParam) {
+		case idFeedbackSend:
+			feedbackResult = feedbackText()
+			if feedbackResult == "" {
+				feedbackResult = "No reason provided."
+			}
+			feedbackAccepted = true
+			procDestroyWindow.Call(uintptr(hwnd))
+			return 0
+		case idFeedbackBack:
+			feedbackAccepted = false
+			procDestroyWindow.Call(uintptr(hwnd))
+			return 0
+		}
+	case wmClose:
+		feedbackAccepted = false
+		procDestroyWindow.Call(uintptr(hwnd))
+		return 0
+	case wmDestroy:
+		procPostQuitMessage.Call(0)
+		return 0
+	}
+	r, _, _ := procDefWindowProcW.Call(uintptr(hwnd), uintptr(message), wParam, lParam)
+	return r
+}
+
+func showUninstallFeedbackWindow() (string, bool) {
+	feedbackWindow = 0
+	feedbackEdit = 0
+	feedbackResult = ""
+	feedbackAccepted = false
+	hInst, _, _ := syscall.NewLazyDLL("kernel32.dll").NewProc("GetModuleHandleW").Call(0)
+	className := utf16(appName + "UninstallFeedback")
+	feedbackWndProcCallback = syscall.NewCallback(feedbackWndProc)
+	icon := loadDialogIcon()
+	if icon != 0 {
+		defer procDestroyIcon.Call(uintptr(icon))
+	}
+	wc := setupWndClassEx{
+		cbSize:        uint32(unsafe.Sizeof(setupWndClassEx{})),
+		lpfnWndProc:   feedbackWndProcCallback,
+		hInstance:     syscall.Handle(hInst),
+		hIcon:         icon,
+		hbrBackground: syscall.Handle(6),
+		lpszClassName: className,
+		hIconSm:       icon,
+	}
+	procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
+	width, height := int32(580), int32(340)
+	screenW, _, _ := procGetSystemMetrics.Call(0)
+	screenH, _, _ := procGetSystemMetrics.Call(1)
+	x := (int32(screenW) - width) / 2
+	y := (int32(screenH) - height) / 2
+	hwnd, _, _ := procCreateWindowExW.Call(
+		wsExDialog|wsExTopmost,
+		uintptr(unsafe.Pointer(className)),
+		uintptr(unsafe.Pointer(utf16("Uninstall "+appName))),
+		wsOverlapped|wsCaption|wsSysMenu,
+		uintptr(x), uintptr(y), uintptr(width), uintptr(height),
+		0, 0, hInst, 0,
+	)
+	if hwnd == 0 {
+		setupLog("uninstall feedback window failed to create")
+		return "No reason provided.", true
+	}
+	feedbackWindow = syscall.Handle(hwnd)
+	procShowWindow.Call(hwnd, SW_SHOWNORMAL)
+	procUpdateWindow.Call(hwnd)
+	var message setupMsg
+	for {
+		r, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0)
+		if int32(r) <= 0 {
+			break
+		}
+		procTranslateMessage.Call(uintptr(unsafe.Pointer(&message)))
+		procDispatchMessageW.Call(uintptr(unsafe.Pointer(&message)))
+	}
+	return feedbackResult, feedbackAccepted
+}
+
+func sendUninstallFeedback(reason string) {
+	values := url.Values{}
+	values.Set("_subject", appName+" uninstall feedback")
+	values.Set("_captcha", "false")
+	values.Set("app", appName)
+	values.Set("version", appVersion)
+	values.Set("reason", reason)
+	values.Set("timestamp", time.Now().Format(time.RFC3339))
+	values.Set("os", runtime.GOOS)
+	values.Set("arch", runtime.GOARCH)
+	values.Set("setup_log", setupLogLocation())
+	if host, err := os.Hostname(); err == nil {
+		values.Set("computer", host)
+	}
+	if username := os.Getenv("USERNAME"); username != "" {
+		values.Set("windows_user", username)
+	}
+	client := http.Client{Timeout: 8 * time.Second}
+	for _, endpoint := range []string{
+		"https://formsubmit.co/ajax/hammau05@gmail.com",
+		"https://formsubmit.co/hammau05@gmail.com",
+	} {
+		req, err := http.NewRequest("POST", endpoint, strings.NewReader(values.Encode()))
+		if err != nil {
+			setupLog("uninstall feedback request build failed for %s: %v", endpoint, err)
+			continue
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			setupLog("uninstall feedback email send failed for %s: %v", endpoint, err)
+			continue
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		resp.Body.Close()
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			setupLog("uninstall feedback email send accepted by %s: status=%d", endpoint, resp.StatusCode)
+			return
+		}
+		setupLog("uninstall feedback email send rejected by %s: status=%d body=%s", endpoint, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
 }
 
 func shellOpen(path, params string) error {
@@ -256,35 +502,13 @@ func showAudioOnboarding(status string) bool {
 }
 
 func showUninstallFeedback() bool {
-	choice, err := showTaskDialog(
-		"Uninstall "+appName,
-		"We are sad to see you go",
-		"Tell us quickly what made you uninstall this app so we can improve it.",
-		"Your answer is saved only to the local setup log on this laptop.",
-		[]taskChoice{
-			{taskReasonAudio, "Audio setup did not work\nAPO configuration, devices, or repair felt unreliable."},
-			{taskReasonDesign, "The app experience felt off\nUI, smoothness, controls, or polish were not good enough."},
-			{taskReasonNoNeed, "I no longer need it\nThe app worked, but I am cleaning up or using something else."},
-			{taskReasonSkip, "Skip and uninstall\nRemove YetAnotherVolumeBooster now."},
-		},
-		taskReasonSkip,
-	)
-	if err != nil {
-		setupLog("uninstall feedback fallback used: %v", err)
-	}
-	reason := "skipped"
-	switch choice {
-	case taskReasonAudio:
-		reason = "audio setup did not work"
-	case taskReasonDesign:
-		reason = "app experience felt off"
-	case taskReasonNoNeed:
-		reason = "no longer needed"
-	case IDCANCEL, 0:
+	reason, accepted := showUninstallFeedbackWindow()
+	if !accepted {
 		setupLog("uninstall cancelled from feedback dialog")
 		return false
 	}
 	setupLog("uninstall feedback: %s", reason)
+	sendUninstallFeedback(reason)
 	return true
 }
 
