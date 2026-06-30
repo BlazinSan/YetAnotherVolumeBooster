@@ -283,27 +283,29 @@ var (
 	procRtlMoveMemory    = kernel32.NewProc("RtlMoveMemory")
 	procMoveFileExW      = kernel32.NewProc("MoveFileExW")
 
-	procCreateCompatibleDC     = gdi32.NewProc("CreateCompatibleDC")
-	procDeleteDC               = gdi32.NewProc("DeleteDC")
-	procCreateCompatibleBitmap = gdi32.NewProc("CreateCompatibleBitmap")
-	procSelectObject           = gdi32.NewProc("SelectObject")
-	procDeleteObject           = gdi32.NewProc("DeleteObject")
-	procBitBlt                 = gdi32.NewProc("BitBlt")
-	procCreateSolidBrush       = gdi32.NewProc("CreateSolidBrush")
-	procCreatePen              = gdi32.NewProc("CreatePen")
-	procRoundRect              = gdi32.NewProc("RoundRect")
-	procRectangle              = gdi32.NewProc("Rectangle")
-	procEllipse                = gdi32.NewProc("Ellipse")
-	procMoveToEx               = gdi32.NewProc("MoveToEx")
-	procLineTo                 = gdi32.NewProc("LineTo")
-	procSetBkMode              = gdi32.NewProc("SetBkMode")
-	procSetTextColor           = gdi32.NewProc("SetTextColor")
-	procCreateFontW            = gdi32.NewProc("CreateFontW")
-	procGetStockObject         = gdi32.NewProc("GetStockObject")
-	procCreateRoundRectRgn     = gdi32.NewProc("CreateRoundRectRgn")
-	procCreateEllipticRgn      = gdi32.NewProc("CreateEllipticRgn")
-	procSelectClipRgn          = gdi32.NewProc("SelectClipRgn")
-	procFillRect               = user32.NewProc("FillRect")
+	procCreateCompatibleDC      = gdi32.NewProc("CreateCompatibleDC")
+	procDeleteDC                = gdi32.NewProc("DeleteDC")
+	procCreateCompatibleBitmap  = gdi32.NewProc("CreateCompatibleBitmap")
+	procSelectObject            = gdi32.NewProc("SelectObject")
+	procDeleteObject            = gdi32.NewProc("DeleteObject")
+	procBitBlt                  = gdi32.NewProc("BitBlt")
+	procCreateSolidBrush        = gdi32.NewProc("CreateSolidBrush")
+	procCreatePen               = gdi32.NewProc("CreatePen")
+	procRoundRect               = gdi32.NewProc("RoundRect")
+	procRectangle               = gdi32.NewProc("Rectangle")
+	procEllipse                 = gdi32.NewProc("Ellipse")
+	procMoveToEx                = gdi32.NewProc("MoveToEx")
+	procLineTo                  = gdi32.NewProc("LineTo")
+	procSetBkMode               = gdi32.NewProc("SetBkMode")
+	procSetTextColor            = gdi32.NewProc("SetTextColor")
+	procCreateFontW             = gdi32.NewProc("CreateFontW")
+	procAddFontMemResourceEx    = gdi32.NewProc("AddFontMemResourceEx")
+	procRemoveFontMemResourceEx = gdi32.NewProc("RemoveFontMemResourceEx")
+	procGetStockObject          = gdi32.NewProc("GetStockObject")
+	procCreateRoundRectRgn      = gdi32.NewProc("CreateRoundRectRgn")
+	procCreateEllipticRgn       = gdi32.NewProc("CreateEllipticRgn")
+	procSelectClipRgn           = gdi32.NewProc("SelectClipRgn")
+	procFillRect                = user32.NewProc("FillRect")
 
 	procDrawTextW             = user32.NewProc("DrawTextW")
 	procGradientFill          = msimg32.NewProc("GradientFill")
@@ -316,14 +318,15 @@ var (
 	dpiScale        = 1.0
 	wndProcCallback uintptr
 
-	fontTitle  syscall.Handle
-	fontBrand  syscall.Handle
-	fontValue  syscall.Handle
-	fontDB     syscall.Handle
-	fontButton syscall.Handle
-	fontBody   syscall.Handle
-	fontSmall  syscall.Handle
-	fontStatus syscall.Handle
+	fontTitle         syscall.Handle
+	fontBrand         syscall.Handle
+	fontValue         syscall.Handle
+	fontDB            syscall.Handle
+	fontButton        syscall.Handle
+	fontBody          syscall.Handle
+	fontSmall         syscall.Handle
+	fontStatus        syscall.Handle
+	fontBrandResource uintptr
 
 	hoverElement   = uiNone
 	pressedElement = uiNone
@@ -402,12 +405,19 @@ func darkPalette() uiPalette {
 
 var palette = lightPalette()
 
-const repairIconPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAH7SURBVHhe7ZotTwNBEIYrkUgkElmJrEQikUgkP6GCBInE4DEkSCQSiUSSYPgBkKDuHTJkrpm+vesHpUlnmCc50ZvpJs/t3u3c7g0GRVEURRECEdkTkZGI7HMsPSJyCuBLDADXnJMW6/kujjk3JQDO2dwYc25KAFyxuTG5APpcsOfDwfS/EwDggc0VACcWP/fPh3QjA8C7k/MMVZZPKgCOuJ2QiMgOy7UAuOBzjhyjwHp5BgAffM4D4IzbCone5yy3CADPOnK4rZD03eN9mPwutxMWALcs2Uc6ecWkFtLK20NT64H2iFsXaAkMoGFZhmqAGUK+N2hl1zTNG8v8llB1gcoDeGWJNYlRF2xIPkZdsEH5l62vC/5KXtsA8GjHvb1Kb/fUuKo8gDua6rZbcB6ryuvSGLcRlpIv+aUp+RSUfMkvTcmnoORLfmlKPiS64GhvY0P7nV9eFxYAXHYtRAL45HNzCCk/tNWVdQkprz2/yvDuI568omvrbOLjHOshprz1/tQ9zzmKj3cQU17hLWqOe3yeI668omvq3objHp9nxJZXbK6fwHGPzwNww/GQ2K7rFJzTQmk/BVIKdKOB5GYugo/plMnx0GjZyzPBAkbcRnj0e51lLoJuR/F/02Aj4YmlFfueL1/PdwHg0KbHsW1A/g/xoiiKoiiKIgnfZRrDEogZ9BEAAAAASUVORK5CYII="
+const repairIconPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAG2SURBVHhe7dohT8NQFIbhSSQSiSIogpycRCKRMySTSOT+AThwSCQSiUQikUgkEvcecpKSNF/WtR2InbPzyG29yXvTrLe3nUxKKaWUUkopZcuY2bGZ7evnO8HMDoAv4Bt4AKb6m9SAZxPAh5ld++To71Mxs7nGK+AJuNBjw/s99TW4C/AJ3Pj/hY4V0qpTfyjg1cxOdcww/JTWqDH8z1LHDAV40aihwseb2aFGDRU+3pnZUsOGSBHvgHeN65MpfqpxfYA3HScs4E4D+wALHSckM9vzxYwG9gEudayQzOxc40aY63jhAI9aNVLcSfB7fb/d1aINxJwE4ExL/iDsJNxqyR/MdPyttunqb5Vwi6KKX8NXecCJh+l3KmV8eyfY7xK7JiJ9fJtOxE7FtzUTcaWfb7X/ig+p4teo+GzxzcPMGXCvwW3p4v1GZOjTnHTxY57kZIxfaGSXdPFuzGYGcKTHh+YPITWyx7mOEdqY07+x1DFC88udFvaIuWXVxffztbBHjhcY2oY+0fFLpR6bwpCnOs0CKe9LTc3efteOjS+S8sa3+WWxuTIsfcNi597rK6WUUkopwfwAmC6Oc7iYmREAAAAASUVORK5CYII="
+const themeSunIconPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAJISURBVHhe7ZmtU+RAEMWRJ5HIk0gkEnlyJRKJRCJx/AnIkydPnkQikUgkEol7Q72iUxXe7Ww+Jtn0TvpXFZPM7vRMZl6/6RwdBUEQBEEQLERK6YfeWxUA/ui91ZBSOk1fXOizVQDgnqMH8FufrQIAbzYBH6vTAgC/bPk3XGmbqqH4tUcP4FHbVEtK6diWvfJT21YJgGsduXGnbasEwJOOnAB41bbV0cr9Oer2BE3uz1G9J2hyf46qPcGW3J+jTk+guT9HlZ5gR+7P4cMTmGrflV59334DgH/6HyOvMx3TYABcDnx7LgBwo2MZDWeSRkU78QiA91n8hO1jLk23mMs80dgnxfaWOwA87M1DpJQ2ttQWh/rEA5bGODvMEACeNaB9YrpUrvRj4ZIbmuKmgoaJuqQxLQJTjgY4JzxUaQyLA+C867BTiunORvt2A1NQruBRCoAX6o726Q7Thb86gBJc7fc+WMCTcVDlMm4DHcAUUGO0L5eklG41+Cmg09O+XDKXOWKG0b7c0aPqWwTLatqnK+Y+KLmvGg+tGQz1DK6rxlRpDTgHJ6pZzuYgaXJ6wQqV9u0CO493Yh9H/nuLzB59Sm80WfpbF3SdA2y577SyrAZ3VZ1skny5wl0fPXiAGVqwsEJsdkKH/t/sUJ01SGK1glE1OqtBbt1Wrj6e2OHn295ti1wpO0Ry1MRODpdrO6qcyJWyRSRvtc0iNEffPiJXSlskabn1+d6xffq2b1FqieSsE96Jef9F9iInf9GKcBAEQRAEQRAcLp8+9+M0PsQLmAAAAABJRU5ErkJggg=="
+const themeMoonIconPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAERSURBVHhe7c9BcoUwEEPBf/9LJ/uuBDyGpBClXjMy7/Opqqqqqv/zdcBvX8VY+f1rGPoTb17D0N94F8/AI97GM/CM99GMO+N9PAPPeB/NuDPeRzNuhRvRjFvhRizDVrgRzbgVbsQybJU7sQxb5U4sw1a5E8moCbciGTXhViSjVrkTy7AJtyIZNeFWJKMm3Ipk1IRbcQyaci+SURNuRTJqwq1IRk25F8egKffiGDTlXhyDdrgZxZgdbsYxaIebUYzZ4WYUY3a5G8WYHW5GMWaXu1GM2eVuDEOucDuGIVe4HcOQK9yOYMQdfOPxDLiL7zyaP/8XfPNx/OE7+daj+fNXuB3FmCn3Yhl2xNuqqqqqu3wDryQtbmJ/r7IAAAAASUVORK5CYII="
+const deviceIconPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAFuSURBVHhe7doxbgIxEIVhyhwlZY6QkmNQUqZMyQ1ynJSk41YzEZKLaLJIDB7/stH7JDcR0nsexLIbvNuJiIiIiNzF3V/d/eDupwnXtddb7FzGzD58AWb2Fbt3a+/8MsxsH/fQZZV3/49T3EOX9hlbiQYQ99Dl1gDM7LxxNcZWy9/CDKA8KAnrhQUlYb2woCSsFxaUhPXCgpKwXlhQEtYLC0rCemFBSVgvLCgJ64UFJWG9sKAkrBcWlIT1woKSsF5YUBLWCwtKwnphQUlYLywoCeuFBSVhvbCgJKwXFpSE9cKCkrBet4L0X+F5aQBxD13c/TMmTK58AO8xYXKHuIduZvYdU2ZkZhd3f4n9S5jZMV6JH1g/sXRz/Xt8bWq1n/HHbL5KK7ul9nM7Kw1AA9AAnnsAd5wlfORbYOwZwCqjT5MNOQNYhTpLWH4GsEq7SSLMea0Anxfq7/OrjH5eGHqfX6XoeeHfWuI+X0REZB2/6W/vN0e9M+kAAAAASUVORK5CYII="
+
+type pngIconMask struct {
+	alpha         []uint8
+	width, height int
+}
 
 var (
-	repairIconAlpha  []uint8
-	repairIconWidth  int
-	repairIconHeight int
+	pngIconMasks   = map[string]*pngIconMask{}
+	pngIconScratch []byte
 )
 
 func setPalette(dark bool) {
@@ -723,10 +733,35 @@ func destroyFonts() {
 	fontTitle, fontBrand, fontValue, fontDB, fontButton, fontBody, fontSmall, fontStatus = 0, 0, 0, 0, 0, 0, 0, 0
 }
 
+func installPrivateFonts() {
+	if fontBrandResource != 0 || len(playfairDisplayFont) == 0 {
+		return
+	}
+	var count uint32
+	handle, _, _ := procAddFontMemResourceEx.Call(
+		uintptr(unsafe.Pointer(&playfairDisplayFont[0])),
+		uintptr(len(playfairDisplayFont)),
+		0,
+		uintptr(unsafe.Pointer(&count)),
+	)
+	if handle != 0 {
+		fontBrandResource = handle
+		logEvent("private font loaded: Playfair Display count=%d", count)
+	}
+}
+
+func removePrivateFonts() {
+	if fontBrandResource != 0 {
+		procRemoveFontMemResourceEx.Call(fontBrandResource)
+		fontBrandResource = 0
+	}
+}
+
 func createFonts() {
 	destroyFonts()
+	installPrivateFonts()
 	fontTitle = createFont(27, 600, "Segoe UI Variable Display")
-	fontBrand = createFont(18, 700, "Aptos Display")
+	fontBrand = createFont(18, 400, "Playfair Display")
 	fontValue = createFont(78, 400, "Segoe UI Variable Display")
 	fontDB = createFont(16, 500, "Segoe UI Variable Text")
 	fontButton = createFont(15, 600, "Segoe UI Variable Text")
@@ -886,38 +921,39 @@ func drawSoftLine(hdc syscall.Handle, x1, y1, x2, y2 int32, color uintptr, width
 	drawCircle(hdc, x2, y2, radius, color)
 }
 
-func ensureRepairIconMask() bool {
-	if len(repairIconAlpha) > 0 {
-		return true
+func ensurePNGIconMask(name, source string) (*pngIconMask, bool) {
+	if mask := pngIconMasks[name]; mask != nil && len(mask.alpha) > 0 {
+		return mask, true
 	}
-	data, err := base64.StdEncoding.DecodeString(repairIconPNGBase64)
+	data, err := base64.StdEncoding.DecodeString(source)
 	if err != nil {
-		logEvent("repair icon decode failed: %v", err)
-		return false
+		logEvent("%s icon decode failed: %v", name, err)
+		return nil, false
 	}
 	img, err := png.Decode(bytes.NewReader(data))
 	if err != nil {
-		logEvent("repair icon png decode failed: %v", err)
-		return false
+		logEvent("%s icon png decode failed: %v", name, err)
+		return nil, false
 	}
 	bounds := img.Bounds()
-	repairIconWidth = bounds.Dx()
-	repairIconHeight = bounds.Dy()
-	if repairIconWidth <= 0 || repairIconHeight <= 0 {
-		return false
+	mask := &pngIconMask{width: bounds.Dx(), height: bounds.Dy()}
+	if mask.width <= 0 || mask.height <= 0 {
+		return nil, false
 	}
-	repairIconAlpha = make([]uint8, repairIconWidth*repairIconHeight)
-	for y := 0; y < repairIconHeight; y++ {
-		for x := 0; x < repairIconWidth; x++ {
+	mask.alpha = make([]uint8, mask.width*mask.height)
+	for y := 0; y < mask.height; y++ {
+		for x := 0; x < mask.width; x++ {
 			_, _, _, a := img.At(bounds.Min.X+x, bounds.Min.Y+y).RGBA()
-			repairIconAlpha[y*repairIconWidth+x] = uint8(a >> 8)
+			mask.alpha[y*mask.width+x] = uint8(a >> 8)
 		}
 	}
-	return true
+	pngIconMasks[name] = mask
+	return mask, true
 }
 
-func drawTintedPNGMask(hdc syscall.Handle, centerX, centerY, logicalSize int32, tint uintptr) bool {
-	if !ensureRepairIconMask() {
+func drawTintedPNGMask(hdc syscall.Handle, centerX, centerY, logicalSize int32, tint uintptr, name, source string) bool {
+	mask, ok := ensurePNGIconMask(name, source)
+	if !ok {
 		return false
 	}
 	size := int(scaleInt(logicalSize))
@@ -925,12 +961,19 @@ func drawTintedPNGMask(hdc syscall.Handle, centerX, centerY, logicalSize int32, 
 		return false
 	}
 	r, g, b := colorComponents(tint)
-	pixels := make([]byte, size*size*4)
+	needed := size * size * 4
+	if cap(pngIconScratch) < needed {
+		pngIconScratch = make([]byte, needed)
+	}
+	pixels := pngIconScratch[:needed]
+	for i := range pixels {
+		pixels[i] = 0
+	}
 	for y := 0; y < size; y++ {
-		srcY := y * repairIconHeight / size
+		srcY := y * mask.height / size
 		for x := 0; x < size; x++ {
-			srcX := x * repairIconWidth / size
-			alpha := repairIconAlpha[srcY*repairIconWidth+srcX]
+			srcX := x * mask.width / size
+			alpha := mask.alpha[srcY*mask.width+srcX]
 			if alpha == 0 {
 				continue
 			}
@@ -967,8 +1010,8 @@ func drawTintedPNGMask(hdc syscall.Handle, centerX, centerY, logicalSize int32, 
 	left := scaleInt(centerX + clientLogicalOrigin() - logicalSize/2)
 	top := scaleInt(centerY - logicalSize/2)
 	blend := uintptr(0x01FF0000)
-	ok, _, _ := procAlphaBlend.Call(uintptr(hdc), uintptr(left), uintptr(top), uintptr(size), uintptr(size), memDC, 0, 0, uintptr(size), uintptr(size), blend)
-	return ok != 0
+	result, _, _ := procAlphaBlend.Call(uintptr(hdc), uintptr(left), uintptr(top), uintptr(size), uintptr(size), memDC, 0, 0, uintptr(size), uintptr(size), blend)
+	return result != 0
 }
 
 func drawBackground(hdc syscall.Handle, client rect) {
@@ -1097,13 +1140,12 @@ func drawPresetButton(hdc syscall.Handle, target rect, id int, percent int) {
 
 func drawActionIcon(hdc syscall.Handle, kind int, centerX, centerY int32, color uintptr) {
 	if kind == uiDevice {
-		r := scaledRect(logicalRect(centerX-10, centerY-8, centerX+10, centerY+6))
-		strokeRoundRect(hdc, r, 4, color, 1)
-		drawLine(hdc, centerX-4, centerY+9, centerX+4, centerY+9, color, 1)
-		drawLine(hdc, centerX, centerY+6, centerX, centerY+9, color, 1)
+		if drawTintedPNGMask(hdc, centerX, centerY, 26, color, "device", deviceIconPNGBase64) {
+			return
+		}
 		return
 	}
-	if drawTintedPNGMask(hdc, centerX, centerY, 26, color) {
+	if drawTintedPNGMask(hdc, centerX, centerY, 26, color, "repair", repairIconPNGBase64) {
 		return
 	}
 	drawSoftLine(hdc, centerX-10, centerY+9, centerX+5, centerY-6, color, 2)
@@ -1170,14 +1212,17 @@ func drawToggle(hdc syscall.Handle, centerX, centerY int32, progress float64, ho
 	} else {
 		fillRoundRect(hdc, inner, pillRadius, offColor)
 	}
-	knobX := centerX - 24 + int32(math.Round(48*motion))
-	knobFill := mixColor(palette.card, palette.cardSoft, 0.26)
+	knobX := centerX - 25 + int32(math.Round(50*motion))
+	knobFill := mixColor(rgb(245, 251, 249), palette.accentLight, 0.10)
 	if progress > 0.55 {
-		knobFill = mixColor(palette.card, palette.accentLight, 0.16)
+		knobFill = mixColor(rgb(230, 250, 241), palette.accentLight, 0.12)
 	}
-	drawCircle(hdc, knobX, centerY+2, 15, mixColor(palette.shadow, palette.background, 0.28))
-	drawCircle(hdc, knobX, centerY, 14, knobFill)
-	drawCircle(hdc, knobX-4, centerY-5, 4, mixColor(knobFill, palette.card, 0.34))
+	knobShadow := scaledRect(logicalRect(knobX-17, centerY-13, knobX+17, centerY+13))
+	knobShadow.top += scaleInt(2)
+	knobShadow.bottom += scaleInt(2)
+	fillRoundRect(hdc, knobShadow, 11, mixColor(palette.shadow, palette.background, 0.24))
+	knob := scaledRect(logicalRect(knobX-16, centerY-11, knobX+16, centerY+11))
+	fillRoundRect(hdc, knob, 10, knobFill)
 }
 
 func drawSettingRow(hdc syscall.Handle, target rect, id int, title, subtitle string, progress float64) {
@@ -1225,13 +1270,7 @@ func drawStatusCard(hdc syscall.Handle, layout uiLayout) {
 	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.20))
 	fillRoundRect(hdc, r, pillRadius, palette.card)
 	drawCircle(hdc, layout.statusCardRect.left+23, (layout.statusCardRect.top+layout.statusCardRect.bottom)/2, 5, toneColor(currentStatusTone))
-	drawText(hdc, statusText, scaledRect(logicalRect(layout.statusCardRect.left+48, layout.statusCardRect.top, layout.logsRect.left-16, layout.statusCardRect.bottom)), fontStatus, palette.text, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
-
-	logs := scaledRect(layout.logsRect)
-	fill := palette.cardSoft
-	fill = mixColor(fill, palette.accent, controlVisual(uiLogs)*0.10)
-	fillRoundRect(hdc, logs, pillRadius, fill)
-	drawText(hdc, "Logs", logs, fontSmall, palette.muted, dtCenter|dtVCenter|dtSingleLine)
+	drawText(hdc, statusText, scaledRect(logicalRect(layout.statusCardRect.left+48, layout.statusCardRect.top, layout.statusCardRect.right-24, layout.statusCardRect.bottom)), fontStatus, palette.text, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
 }
 
 func drawWarning(hdc syscall.Handle, layout uiLayout) {
@@ -1270,24 +1309,6 @@ func drawTitleIcon(hdc syscall.Handle, x, y, size int32, fallbackColor uintptr) 
 		return
 	}
 	drawRawCircle(hdc, x+size/2, y+size/2, size/3, fallbackColor)
-}
-
-func drawSunGlyph(hdc syscall.Handle, cx, cy int32, color uintptr) {
-	drawCircle(hdc, cx, cy, 4, color)
-	for _, d := range [][2]int32{{0, -8}, {0, 8}, {-8, 0}, {8, 0}, {-6, -6}, {6, -6}, {-6, 6}, {6, 6}} {
-		drawCircle(hdc, cx+d[0], cy+d[1], 2, mixColor(color, palette.card, 0.16))
-	}
-}
-
-func drawMoonWaveGlyph(hdc syscall.Handle, cx, cy int32, color, cutout uintptr) {
-	drawCircle(hdc, cx-2, cy-4, 7, color)
-	drawCircle(hdc, cx+3, cy-7, 7, cutout)
-	for i := int32(0); i < 3; i++ {
-		y := cy + 6 + i*4
-		drawSoftLine(hdc, cx-10, y, cx-3, y+2, color, 2)
-		drawSoftLine(hdc, cx-3, y+2, cx+5, y, color, 2)
-		drawSoftLine(hdc, cx+5, y, cx+11, y+2, color, 2)
-	}
 }
 
 func drawThemeButton(hdc syscall.Handle, target rect, dark bool) {
@@ -1329,12 +1350,12 @@ func drawThemeButton(hdc syscall.Handle, target rect, dark bool) {
 	fillGradientRoundRect(hdc, activeRect, pillRadius, mixColor(palette.accentDark, palette.accent, 0.18), mixColor(palette.accentLight, palette.accent, 0.18))
 
 	if dark {
-		drawSunGlyph(hdc, inactiveIconX, cy, mixColor(palette.muted, palette.card, 0.18))
-		drawMoonWaveGlyph(hdc, activeIconX, cy+1, mixColor(palette.card, rgb(255, 255, 255), 0.20), mixColor(palette.accentLight, palette.accent, 0.24))
+		drawTintedPNGMask(hdc, inactiveIconX, cy, 20, mixColor(palette.muted, palette.card, 0.18), "theme-sun", themeSunIconPNGBase64)
+		drawTintedPNGMask(hdc, activeIconX, cy, 21, mixColor(palette.card, rgb(255, 255, 255), 0.20), "theme-moon", themeMoonIconPNGBase64)
 		return
 	}
-	drawSunGlyph(hdc, activeIconX, cy, mixColor(palette.card, rgb(255, 255, 255), 0.18))
-	drawMoonWaveGlyph(hdc, inactiveIconX, cy+1, mixColor(palette.muted, palette.accentDark, 0.20), mixColor(palette.cardSoft, palette.background, 0.16))
+	drawTintedPNGMask(hdc, activeIconX, cy, 20, mixColor(palette.card, rgb(255, 255, 255), 0.18), "theme-sun", themeSunIconPNGBase64)
+	drawTintedPNGMask(hdc, inactiveIconX, cy, 21, mixColor(palette.muted, palette.accentDark, 0.20), "theme-moon", themeMoonIconPNGBase64)
 }
 
 func drawTitleBar(hdc syscall.Handle, client rect, dark bool) {
@@ -1473,9 +1494,6 @@ func hitTest(p point) int {
 	if pointInRect(p, layout.closeTrayRect) {
 		return uiCloseToTray
 	}
-	if pointInRect(p, layout.logsRect) {
-		return uiLogs
-	}
 	return uiNone
 }
 
@@ -1535,8 +1553,6 @@ func executeElement(id int) {
 		toggleStartup()
 	case uiCloseToTray:
 		toggleCloseToTray()
-	case uiLogs:
-		openLogs()
 	case uiTheme:
 		beginThemeSwitch()
 	case uiTitleMin:
@@ -1636,7 +1652,7 @@ func easeVisual(value, target float64) float64 {
 func animatedControlIDs() []int {
 	return []int{
 		uiPreset100, uiPreset200, uiPreset300, uiPreset400, uiPreset500,
-		uiDevice, uiRepair, uiStartup, uiCloseToTray, uiLogs, uiTheme,
+		uiDevice, uiRepair, uiStartup, uiCloseToTray, uiTheme,
 	}
 }
 
@@ -1713,7 +1729,9 @@ func tickAnimation() {
 	} else if themeTransition {
 		needsPaint = true
 	}
-	updateTrayAnimation(animationPhase)
+	if currentPct <= 100 || animationPhase%3 == 0 {
+		updateTrayAnimation(animationPhase)
+	}
 	if needsPaint {
 		invalidateWindow()
 	}
@@ -1906,6 +1924,7 @@ func wndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr) (resul
 		removeTrayIcon()
 		destroyTrayIcons()
 		destroyFonts()
+		removePrivateFonts()
 		if windowIcon != 0 {
 			procDestroyIcon.Call(uintptr(windowIcon))
 			windowIcon = 0

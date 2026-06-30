@@ -49,16 +49,19 @@ const (
 	wsVisible      = 0x10000000
 	wsTabStop      = 0x00010000
 	wsBorder       = 0x00800000
+	wsClipChildren = 0x02000000
 	wsExDialog     = 0x00000001
 	wsExTopmost    = 0x00000008
 	esMultiline    = 0x0004
 	esAutovscroll  = 0x0040
+	esNoHideSel    = 0x0100
 	esWantReturn   = 0x1000
 	bsDefPush      = 0x00000001
 	wmCreate       = 0x0001
 	wmDestroy      = 0x0002
 	wmCommand      = 0x0111
 	wmClose        = 0x0010
+	wmPaint        = 0x000F
 	wmSetFont      = 0x0030
 	wmGetText      = 0x000D
 	wmGetTextLen   = 0x000E
@@ -79,6 +82,12 @@ const (
 	taskReasonDesign     int32 = 2002
 	taskReasonNoNeed     int32 = 2003
 	taskReasonSkip       int32 = 2004
+
+	dtLeft       = 0x00000000
+	dtVCenter    = 0x00000004
+	dtWordBreak  = 0x00000010
+	dtSingleLine = 0x00000020
+	transparent  = 1
 )
 
 var (
@@ -96,9 +105,13 @@ var (
 	//go:embed payload/GPL-2.0.txt
 	gplPayload []byte
 
+	//go:embed payload/OFL-PlayfairDisplay.txt
+	playfairLicensePayload []byte
+
 	user32  = syscall.NewLazyDLL("user32.dll")
 	shell32 = syscall.NewLazyDLL("shell32.dll")
 	comctl  = syscall.NewLazyDLL("comctl32.dll")
+	gdi32   = syscall.NewLazyDLL("gdi32.dll")
 
 	procMessageBoxW      = user32.NewProc("MessageBoxW")
 	procLoadImageW       = user32.NewProc("LoadImageW")
@@ -108,6 +121,12 @@ var (
 	procDefWindowProcW   = user32.NewProc("DefWindowProcW")
 	procShowWindow       = user32.NewProc("ShowWindow")
 	procUpdateWindow     = user32.NewProc("UpdateWindow")
+	procBeginPaint       = user32.NewProc("BeginPaint")
+	procEndPaint         = user32.NewProc("EndPaint")
+	procDrawTextW        = user32.NewProc("DrawTextW")
+	procFillRect         = user32.NewProc("FillRect")
+	procSetFocus         = user32.NewProc("SetFocus")
+	procIsDialogMessageW = user32.NewProc("IsDialogMessageW")
 	procGetMessageW      = user32.NewProc("GetMessageW")
 	procTranslateMessage = user32.NewProc("TranslateMessage")
 	procDispatchMessageW = user32.NewProc("DispatchMessageW")
@@ -115,7 +134,13 @@ var (
 	procDestroyWindow    = user32.NewProc("DestroyWindow")
 	procSendMessageW     = user32.NewProc("SendMessageW")
 	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
-	procGetStockObject   = syscall.NewLazyDLL("gdi32.dll").NewProc("GetStockObject")
+	procGetStockObject   = gdi32.NewProc("GetStockObject")
+	procCreateFontW      = gdi32.NewProc("CreateFontW")
+	procCreateSolidBrush = gdi32.NewProc("CreateSolidBrush")
+	procDeleteObject     = gdi32.NewProc("DeleteObject")
+	procSelectObject     = gdi32.NewProc("SelectObject")
+	procSetBkMode        = gdi32.NewProc("SetBkMode")
+	procSetTextColor     = gdi32.NewProc("SetTextColor")
 	procShellExecute     = shell32.NewProc("ShellExecuteW")
 	procIsUserAdmin      = shell32.NewProc("IsUserAnAdmin")
 	procTaskDialog       = comctl.NewProc("TaskDialogIndirect")
@@ -187,6 +212,19 @@ type setupWndClassEx struct {
 
 type setupPoint struct{ x, y int32 }
 
+type setupRect struct {
+	left, top, right, bottom int32
+}
+
+type setupPaintStruct struct {
+	hdc         syscall.Handle
+	fErase      int32
+	rcPaint     setupRect
+	fRestore    int32
+	fIncUpdate  int32
+	rgbReserved [32]byte
+}
+
 type setupMsg struct {
 	hwnd    syscall.Handle
 	message uint32
@@ -203,9 +241,83 @@ var (
 	feedbackEdit            syscall.Handle
 	feedbackResult          string
 	feedbackAccepted        bool
+	feedbackTitleFont       syscall.Handle
+	feedbackBodyFont        syscall.Handle
+	feedbackButtonFont      syscall.Handle
+	feedbackSendDone        chan struct{}
 )
 
 func lowordSetup(v uintptr) int32 { return int32(v & 0xffff) }
+
+func setupRGB(r, g, b uint8) uintptr {
+	return uintptr(r) | uintptr(g)<<8 | uintptr(b)<<16
+}
+
+func createSetupFont(size, weight int32, face string) syscall.Handle {
+	h, _, _ := procCreateFontW.Call(
+		uintptr(-size), 0, 0, 0,
+		uintptr(weight), 0, 0, 0,
+		1, 0, 0, 5, 0,
+		uintptr(unsafe.Pointer(utf16(face))),
+	)
+	return syscall.Handle(h)
+}
+
+func ensureFeedbackFonts() {
+	if feedbackTitleFont == 0 {
+		feedbackTitleFont = createSetupFont(19, 650, "Segoe UI Variable Display")
+	}
+	if feedbackBodyFont == 0 {
+		feedbackBodyFont = createSetupFont(14, 400, "Segoe UI Variable Text")
+	}
+	if feedbackButtonFont == 0 {
+		feedbackButtonFont = createSetupFont(13, 500, "Segoe UI Variable Text")
+	}
+}
+
+func destroyFeedbackFonts() {
+	for _, font := range []syscall.Handle{feedbackTitleFont, feedbackBodyFont, feedbackButtonFont} {
+		if font != 0 {
+			procDeleteObject.Call(uintptr(font))
+		}
+	}
+	feedbackTitleFont, feedbackBodyFont, feedbackButtonFont = 0, 0, 0
+}
+
+func drawSetupText(hdc syscall.Handle, text string, target setupRect, font syscall.Handle, color uintptr, flags uintptr) {
+	old, _, _ := procSelectObject.Call(uintptr(hdc), uintptr(font))
+	procSetBkMode.Call(uintptr(hdc), transparent)
+	procSetTextColor.Call(uintptr(hdc), color)
+	procDrawTextW.Call(
+		uintptr(hdc),
+		uintptr(unsafe.Pointer(utf16(text))),
+		uintptr(len([]rune(text))),
+		uintptr(unsafe.Pointer(&target)),
+		flags,
+	)
+	procSelectObject.Call(uintptr(hdc), old)
+}
+
+func paintFeedbackWindow(hwnd syscall.Handle) {
+	var ps setupPaintStruct
+	hdcRaw, _, _ := procBeginPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&ps)))
+	if hdcRaw == 0 {
+		return
+	}
+	defer procEndPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&ps)))
+	hdc := syscall.Handle(hdcRaw)
+	bg, _, _ := procCreateSolidBrush.Call(setupRGB(248, 251, 249))
+	if bg != 0 {
+		full := setupRect{left: 0, top: 0, right: 620, bottom: 360}
+		procFillRect.Call(uintptr(hdc), uintptr(unsafe.Pointer(&full)), bg)
+		procDeleteObject.Call(bg)
+	}
+	text := setupRGB(28, 40, 39)
+	muted := setupRGB(87, 105, 103)
+	drawSetupText(hdc, "We're sad to see you go.", setupRect{left: 30, top: 24, right: 570, bottom: 56}, feedbackTitleFont, text, dtLeft|dtVCenter|dtSingleLine)
+	drawSetupText(hdc, "Before YetAnotherVolumeBooster is removed, tell us what made you uninstall it.", setupRect{left: 30, top: 66, right: 570, bottom: 104}, feedbackBodyFont, text, dtLeft|dtWordBreak)
+	drawSetupText(hdc, "Your reason and basic app diagnostics will be sent to the developer.", setupRect{left: 30, top: 108, right: 570, bottom: 142}, feedbackBodyFont, muted, dtLeft|dtWordBreak)
+}
 
 func loadDialogIcon() syscall.Handle {
 	if !fileExists(iconPath()) {
@@ -307,13 +419,13 @@ func feedbackWndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr
 	switch message {
 	case wmCreate:
 		feedbackWindow = hwnd
-		font, _, _ := procGetStockObject.Call(defaultGUIFont)
-		createFeedbackChild(hwnd, "STATIC", "We are sad to see you go.", 0, 24, 20, 500, 24, 0, font)
-		createFeedbackChild(hwnd, "STATIC", "Tell us quickly what made you uninstall this app so we can improve it.", 0, 24, 52, 500, 22, 0, font)
-		createFeedbackChild(hwnd, "STATIC", "Your typed reason and basic app diagnostics are sent to hammau05@gmail.com when you click Uninstall.", 0, 24, 78, 500, 34, 0, font)
-		feedbackEdit = createFeedbackChild(hwnd, "EDIT", "", wsBorder|esMultiline|esAutovscroll|esWantReturn, 24, 120, 508, 118, idFeedbackEdit, font)
-		createFeedbackChild(hwnd, "BUTTON", "Uninstall", wsTabStop|bsDefPush, 322, 258, 100, 32, idFeedbackSend, font)
-		createFeedbackChild(hwnd, "BUTTON", "Cancel", wsTabStop, 432, 258, 100, 32, idFeedbackBack, font)
+		ensureFeedbackFonts()
+		feedbackEdit = createFeedbackChild(hwnd, "EDIT", "", wsBorder|esMultiline|esAutovscroll|esNoHideSel|esWantReturn, 30, 152, 530, 110, idFeedbackEdit, uintptr(feedbackBodyFont))
+		createFeedbackChild(hwnd, "BUTTON", "Uninstall", wsTabStop|bsDefPush, 348, 286, 102, 34, idFeedbackSend, uintptr(feedbackButtonFont))
+		createFeedbackChild(hwnd, "BUTTON", "Cancel", wsTabStop, 462, 286, 98, 34, idFeedbackBack, uintptr(feedbackButtonFont))
+		return 0
+	case wmPaint:
+		paintFeedbackWindow(hwnd)
 		return 0
 	case wmCommand:
 		switch lowordSetup(wParam) {
@@ -335,6 +447,9 @@ func feedbackWndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr
 		procDestroyWindow.Call(uintptr(hwnd))
 		return 0
 	case wmDestroy:
+		feedbackWindow = 0
+		feedbackEdit = 0
+		destroyFeedbackFonts()
 		procPostQuitMessage.Call(0)
 		return 0
 	}
@@ -364,7 +479,7 @@ func showUninstallFeedbackWindow() (string, bool) {
 		hIconSm:       icon,
 	}
 	procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
-	width, height := int32(580), int32(340)
+	width, height := int32(620), int32(370)
 	screenW, _, _ := procGetSystemMetrics.Call(0)
 	screenH, _, _ := procGetSystemMetrics.Call(1)
 	x := (int32(screenW) - width) / 2
@@ -373,7 +488,7 @@ func showUninstallFeedbackWindow() (string, bool) {
 		wsExDialog|wsExTopmost,
 		uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(utf16("Uninstall "+appName))),
-		wsOverlapped|wsCaption|wsSysMenu,
+		wsOverlapped|wsCaption|wsSysMenu|wsClipChildren,
 		uintptr(x), uintptr(y), uintptr(width), uintptr(height),
 		0, 0, hInst, 0,
 	)
@@ -384,11 +499,20 @@ func showUninstallFeedbackWindow() (string, bool) {
 	feedbackWindow = syscall.Handle(hwnd)
 	procShowWindow.Call(hwnd, SW_SHOWNORMAL)
 	procUpdateWindow.Call(hwnd)
+	if feedbackEdit != 0 {
+		procSetFocus.Call(uintptr(feedbackEdit))
+	}
 	var message setupMsg
 	for {
 		r, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0)
 		if int32(r) <= 0 {
 			break
+		}
+		if feedbackWindow != 0 {
+			handled, _, _ := procIsDialogMessageW.Call(uintptr(feedbackWindow), uintptr(unsafe.Pointer(&message)))
+			if handled != 0 {
+				continue
+			}
 		}
 		procTranslateMessage.Call(uintptr(unsafe.Pointer(&message)))
 		procDispatchMessageW.Call(uintptr(unsafe.Pointer(&message)))
@@ -413,7 +537,7 @@ func sendUninstallFeedback(reason string) {
 	if username := os.Getenv("USERNAME"); username != "" {
 		values.Set("windows_user", username)
 	}
-	client := http.Client{Timeout: 8 * time.Second}
+	client := http.Client{Timeout: 5 * time.Second}
 	for _, endpoint := range []string{
 		"https://formsubmit.co/ajax/hammau05@gmail.com",
 		"https://formsubmit.co/hammau05@gmail.com",
@@ -438,6 +562,26 @@ func sendUninstallFeedback(reason string) {
 		}
 		setupLog("uninstall feedback email send rejected by %s: status=%d body=%s", endpoint, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
+}
+
+func startUninstallFeedbackSend(reason string) {
+	feedbackSendDone = make(chan struct{})
+	go func() {
+		defer close(feedbackSendDone)
+		sendUninstallFeedback(reason)
+	}()
+}
+
+func waitForUninstallFeedback(maxWait time.Duration) {
+	if feedbackSendDone == nil {
+		return
+	}
+	select {
+	case <-feedbackSendDone:
+	case <-time.After(maxWait):
+		setupLog("uninstall feedback send still running; continuing uninstall")
+	}
+	feedbackSendDone = nil
 }
 
 func shellOpen(path, params string) error {
@@ -509,7 +653,7 @@ func showUninstallFeedback() bool {
 		return false
 	}
 	setupLog("uninstall feedback: %s", reason)
-	sendUninstallFeedback(reason)
+	startUninstallFeedbackSend(reason)
 	return true
 }
 
@@ -1020,7 +1164,10 @@ func installFiles() error {
 	if err := writeFileAtomic(filepath.Join(installDir(), "GPL-2.0.txt"), gplPayload, 0644); err != nil {
 		return err
 	}
-	thirdParty := []byte("Equalizer APO 1.4.2\r\nOfficial project: https://sourceforge.net/projects/equalizerapo/\r\nSource: https://sourceforge.net/p/equalizerapo/code/\r\nLicense: GNU GPL v2\r\n")
+	if err := writeFileAtomic(filepath.Join(installDir(), "OFL-PlayfairDisplay.txt"), playfairLicensePayload, 0644); err != nil {
+		return err
+	}
+	thirdParty := []byte("Equalizer APO 1.4.2\r\nOfficial project: https://sourceforge.net/projects/equalizerapo/\r\nSource: https://sourceforge.net/p/equalizerapo/code/\r\nLicense: GNU GPL v2\r\n\r\nPlayfair Display\r\nOfficial project: https://fonts.google.com/specimen/Playfair+Display\r\nSource: https://github.com/google/fonts/tree/main/ofl/playfairdisplay\r\nLicense: SIL Open Font License 1.1 (see OFL-PlayfairDisplay.txt)\r\n")
 	return writeFileAtomic(filepath.Join(installDir(), "THIRD-PARTY-NOTICES.txt"), thirdParty, 0644)
 }
 
@@ -1304,6 +1451,7 @@ func uninstall() error {
 	removeUninstallEntry()
 	_ = runHidden("reg.exe", "delete", `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "/v", appName, "/f")
 	_ = os.RemoveAll(dataDir())
+	waitForUninstallFeedback(3 * time.Second)
 
 	// Delete the installation directory after this executable exits.
 	cmdLine := fmt.Sprintf(`timeout /t 2 /nobreak >nul & rmdir /s /q "%s"`, installDir())
