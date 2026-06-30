@@ -276,14 +276,14 @@ func setControlFont(hwnd syscall.Handle, font uintptr) {
 	}
 }
 
-func createFeedbackChild(className, text string, style uintptr, x, y, w, h int32, id int32, font uintptr) syscall.Handle {
+func createFeedbackChild(parent syscall.Handle, className, text string, style uintptr, x, y, w, h int32, id int32, font uintptr) syscall.Handle {
 	hwnd, _, _ := procCreateWindowExW.Call(
 		0,
 		uintptr(unsafe.Pointer(utf16(className))),
 		uintptr(unsafe.Pointer(utf16(text))),
 		style|wsChild|wsVisible,
 		uintptr(x), uintptr(y), uintptr(w), uintptr(h),
-		uintptr(feedbackWindow), uintptr(id), 0, 0,
+		uintptr(parent), uintptr(id), 0, 0,
 	)
 	child := syscall.Handle(hwnd)
 	setControlFont(child, font)
@@ -306,13 +306,14 @@ func feedbackText() string {
 func feedbackWndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr) uintptr {
 	switch message {
 	case wmCreate:
+		feedbackWindow = hwnd
 		font, _, _ := procGetStockObject.Call(defaultGUIFont)
-		createFeedbackChild("STATIC", "We are sad to see you go.", 0, 24, 20, 500, 24, 0, font)
-		createFeedbackChild("STATIC", "Tell us quickly what made you uninstall this app so we can improve it.", 0, 24, 52, 500, 22, 0, font)
-		createFeedbackChild("STATIC", "Your typed reason and basic app diagnostics are sent to hammau05@gmail.com when you click Uninstall.", 0, 24, 78, 500, 34, 0, font)
-		feedbackEdit = createFeedbackChild("EDIT", "", wsBorder|esMultiline|esAutovscroll|esWantReturn, 24, 120, 508, 118, idFeedbackEdit, font)
-		createFeedbackChild("BUTTON", "Uninstall", wsTabStop|bsDefPush, 322, 258, 100, 32, idFeedbackSend, font)
-		createFeedbackChild("BUTTON", "Cancel", wsTabStop, 432, 258, 100, 32, idFeedbackBack, font)
+		createFeedbackChild(hwnd, "STATIC", "We are sad to see you go.", 0, 24, 20, 500, 24, 0, font)
+		createFeedbackChild(hwnd, "STATIC", "Tell us quickly what made you uninstall this app so we can improve it.", 0, 24, 52, 500, 22, 0, font)
+		createFeedbackChild(hwnd, "STATIC", "Your typed reason and basic app diagnostics are sent to hammau05@gmail.com when you click Uninstall.", 0, 24, 78, 500, 34, 0, font)
+		feedbackEdit = createFeedbackChild(hwnd, "EDIT", "", wsBorder|esMultiline|esAutovscroll|esWantReturn, 24, 120, 508, 118, idFeedbackEdit, font)
+		createFeedbackChild(hwnd, "BUTTON", "Uninstall", wsTabStop|bsDefPush, 322, 258, 100, 32, idFeedbackSend, font)
+		createFeedbackChild(hwnd, "BUTTON", "Cancel", wsTabStop, 432, 258, 100, 32, idFeedbackBack, font)
 		return 0
 	case wmCommand:
 		switch lowordSetup(wParam) {
