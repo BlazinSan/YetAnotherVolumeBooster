@@ -126,7 +126,7 @@ const (
 	contentThemeWidth       = 92
 	contentThemeHeight      = 40
 	resizeBorder            = 8
-	themeTransitionDuration = 340 * time.Millisecond
+	themeTransitionDuration = 280 * time.Millisecond
 
 	htClient      = 1
 	htCaption     = 2
@@ -245,6 +245,8 @@ var (
 	procDefWindowProcW                = user32.NewProc("DefWindowProcW")
 	procShowWindow                    = user32.NewProc("ShowWindow")
 	procUpdateWindow                  = user32.NewProc("UpdateWindow")
+	procGetDC                         = user32.NewProc("GetDC")
+	procReleaseDC                     = user32.NewProc("ReleaseDC")
 	procGetMessageW                   = user32.NewProc("GetMessageW")
 	procTranslateMessage              = user32.NewProc("TranslateMessage")
 	procDispatchMessageW              = user32.NewProc("DispatchMessageW")
@@ -345,6 +347,10 @@ var (
 	themeTransitionFrom  bool
 	themeTransitionTo    bool
 	themeTransitionStart time.Time
+	themeFromBitmap      syscall.Handle
+	themeToBitmap        syscall.Handle
+	themeCacheWidth      int32
+	themeCacheHeight     int32
 )
 
 func rgb(r, g, b uint8) uintptr { return uintptr(r) | uintptr(g)<<8 | uintptr(b)<<16 }
@@ -1184,7 +1190,7 @@ func drawToggle(hdc syscall.Handle, centerX, centerY int32, progress float64, ho
 		progress = 1
 	}
 	motion := progress * progress * (3 - 2*progress)
-	targetLogical := logicalRect(centerX-42, centerY-18, centerX+42, centerY+18)
+	targetLogical := logicalRect(centerX-38, centerY-18, centerX+38, centerY+18)
 	target := scaledRect(targetLogical)
 	offColor := mixColor(palette.border, palette.cardSoft, 0.48)
 	if hovered {
@@ -1212,17 +1218,17 @@ func drawToggle(hdc syscall.Handle, centerX, centerY int32, progress float64, ho
 	} else {
 		fillRoundRect(hdc, inner, pillRadius, offColor)
 	}
-	knobX := centerX - 25 + int32(math.Round(50*motion))
+	knobX := centerX - 22 + int32(math.Round(44*motion))
 	knobFill := mixColor(rgb(245, 251, 249), palette.accentLight, 0.10)
 	if progress > 0.55 {
 		knobFill = mixColor(rgb(230, 250, 241), palette.accentLight, 0.12)
 	}
-	knobShadow := scaledRect(logicalRect(knobX-17, centerY-13, knobX+17, centerY+13))
+	knobShadow := scaledRect(logicalRect(knobX-15, centerY-12, knobX+15, centerY+12))
 	knobShadow.top += scaleInt(2)
 	knobShadow.bottom += scaleInt(2)
-	fillRoundRect(hdc, knobShadow, 11, mixColor(palette.shadow, palette.background, 0.24))
-	knob := scaledRect(logicalRect(knobX-16, centerY-11, knobX+16, centerY+11))
-	fillRoundRect(hdc, knob, 10, knobFill)
+	fillRoundRect(hdc, knobShadow, 10, mixColor(palette.shadow, palette.background, 0.24))
+	knob := scaledRect(logicalRect(knobX-14, centerY-10, knobX+14, centerY+10))
+	fillRoundRect(hdc, knob, 9, knobFill)
 }
 
 func drawSettingRow(hdc syscall.Handle, target rect, id int, title, subtitle string, progress float64) {
@@ -1240,9 +1246,9 @@ func drawSettingRow(hdc syscall.Handle, target rect, id int, title, subtitle str
 	titleBottom := target.top + clampInt32(rowHeight/2, 22, 31)
 	subtitleTop := titleBottom - 1
 	subtitleBottom := target.bottom - clampInt32(rowHeight/10, 3, 5)
-	drawText(hdc, title, scaledRect(logicalRect(target.left+22, titleTop, target.right-100, titleBottom)), fontBody, palette.text, dtLeft|dtVCenter|dtSingleLine)
-	drawText(hdc, subtitle, scaledRect(logicalRect(target.left+22, subtitleTop, target.right-100, subtitleBottom)), fontSmall, palette.muted, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
-	drawToggle(hdc, target.right-66, (target.top+target.bottom)/2, progress, hoverElement == id)
+	drawText(hdc, title, scaledRect(logicalRect(target.left+22, titleTop, target.right-134, titleBottom)), fontBody, palette.text, dtLeft|dtVCenter|dtSingleLine)
+	drawText(hdc, subtitle, scaledRect(logicalRect(target.left+22, subtitleTop, target.right-134, subtitleBottom)), fontSmall, palette.muted, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
+	drawToggle(hdc, target.right-74, (target.top+target.bottom)/2, progress, hoverElement == id)
 }
 
 func toneColor(tone statusKind) uintptr {
@@ -1408,6 +1414,84 @@ func drawUIScene(hdc syscall.Handle, client rect, dark bool) {
 	drawWarning(hdc, layout)
 }
 
+func destroyThemeTransitionCache() {
+	if themeFromBitmap != 0 {
+		procDeleteObject.Call(uintptr(themeFromBitmap))
+		themeFromBitmap = 0
+	}
+	if themeToBitmap != 0 {
+		procDeleteObject.Call(uintptr(themeToBitmap))
+		themeToBitmap = 0
+	}
+	themeCacheWidth, themeCacheHeight = 0, 0
+}
+
+func renderThemeFrameBitmap(referenceDC syscall.Handle, client rect, dark bool) syscall.Handle {
+	memDC, _, _ := procCreateCompatibleDC.Call(uintptr(referenceDC))
+	if memDC == 0 {
+		return 0
+	}
+	defer procDeleteDC.Call(memDC)
+	bitmap, _, _ := procCreateCompatibleBitmap.Call(uintptr(referenceDC), uintptr(client.right-client.left), uintptr(client.bottom-client.top))
+	if bitmap == 0 {
+		return 0
+	}
+	oldBitmap, _, _ := procSelectObject.Call(memDC, bitmap)
+	beginGDIPlus(syscall.Handle(memDC))
+	drawUIScene(syscall.Handle(memDC), client, dark)
+	endGDIPlus()
+	procSelectObject.Call(memDC, oldBitmap)
+	return syscall.Handle(bitmap)
+}
+
+func buildThemeTransitionCache() bool {
+	if hwndMain == 0 {
+		return false
+	}
+	destroyThemeTransitionCache()
+	var client rect
+	procGetClientRect.Call(uintptr(hwndMain), uintptr(unsafe.Pointer(&client)))
+	if client.right <= client.left || client.bottom <= client.top {
+		return false
+	}
+	hdc, _, _ := procGetDC.Call(uintptr(hwndMain))
+	if hdc == 0 {
+		return false
+	}
+	defer procReleaseDC.Call(uintptr(hwndMain), hdc)
+	fromBitmap := renderThemeFrameBitmap(syscall.Handle(hdc), client, themeTransitionFrom)
+	toBitmap := renderThemeFrameBitmap(syscall.Handle(hdc), client, themeTransitionTo)
+	if fromBitmap == 0 || toBitmap == 0 {
+		if fromBitmap != 0 {
+			procDeleteObject.Call(uintptr(fromBitmap))
+		}
+		if toBitmap != 0 {
+			procDeleteObject.Call(uintptr(toBitmap))
+		}
+		return false
+	}
+	themeFromBitmap = fromBitmap
+	themeToBitmap = toBitmap
+	themeCacheWidth = client.right - client.left
+	themeCacheHeight = client.bottom - client.top
+	return true
+}
+
+func bitBltBitmap(hdc syscall.Handle, bitmap syscall.Handle, width, height int32) bool {
+	if bitmap == 0 || width <= 0 || height <= 0 {
+		return false
+	}
+	memDC, _, _ := procCreateCompatibleDC.Call(uintptr(hdc))
+	if memDC == 0 {
+		return false
+	}
+	defer procDeleteDC.Call(memDC)
+	oldBitmap, _, _ := procSelectObject.Call(memDC, uintptr(bitmap))
+	defer procSelectObject.Call(memDC, oldBitmap)
+	ok, _, _ := procBitBlt.Call(uintptr(hdc), 0, 0, uintptr(width), uintptr(height), memDC, 0, 0, srccopy)
+	return ok != 0
+}
+
 func drawUI(hdc syscall.Handle, client rect) {
 	if !themeTransition {
 		drawUIScene(hdc, client, settings.DarkMode)
@@ -1417,7 +1501,14 @@ func drawUI(hdc syscall.Handle, client rect) {
 	// Draw the old theme first, then reveal the new theme through an expanding
 	// circle originating at the theme button (native equivalent of the site's
 	// circular View Transition effect).
-	drawUIScene(hdc, client, themeTransitionFrom)
+	width := client.right - client.left
+	height := client.bottom - client.top
+	usingCache := themeFromBitmap != 0 && themeToBitmap != 0 && themeCacheWidth == width && themeCacheHeight == height
+	if usingCache {
+		bitBltBitmap(hdc, themeFromBitmap, width, height)
+	} else {
+		drawUIScene(hdc, client, themeTransitionFrom)
+	}
 	elapsed := time.Since(themeTransitionStart).Seconds() / themeTransitionDuration.Seconds()
 	if elapsed < 0 {
 		elapsed = 0
@@ -1425,7 +1516,7 @@ func drawUI(hdc syscall.Handle, client rect) {
 	if elapsed > 1 {
 		elapsed = 1
 	}
-	ease := 1 - math.Pow(1-elapsed, 4)
+	ease := elapsed * elapsed * elapsed * (elapsed*(elapsed*6-15) + 10)
 	theme := currentLayout().themeRect
 	centerX := scaleInt((theme.left + theme.right) / 2)
 	centerY := scaleInt((theme.top + theme.bottom) / 2)
@@ -1437,10 +1528,14 @@ func drawUI(hdc syscall.Handle, client rect) {
 	)
 	if region != 0 {
 		procSelectClipRgn.Call(uintptr(hdc), region)
-		setGDIPlusClip(region)
-		drawUIScene(hdc, client, themeTransitionTo)
+		if usingCache {
+			bitBltBitmap(hdc, themeToBitmap, width, height)
+		} else {
+			setGDIPlusClip(region)
+			drawUIScene(hdc, client, themeTransitionTo)
+			resetGDIPlusClip()
+		}
 		procSelectClipRgn.Call(uintptr(hdc), 0)
-		resetGDIPlusClip()
 		procDeleteObject.Call(region)
 	}
 }
@@ -1633,6 +1728,7 @@ func beginThemeSwitch() {
 	themeTransitionFrom = settings.DarkMode
 	themeTransitionTo = !settings.DarkMode
 	themeTransitionStart = time.Now()
+	buildThemeTransitionCache()
 	settings.DarkMode = themeTransitionTo
 	if err := saveSettings(settings); err != nil {
 		logEvent("theme setting save failed: %v", err)
@@ -1722,6 +1818,7 @@ func tickAnimation() {
 	titleCloseVisual = nextTitleClose
 	if themeTransition && time.Since(themeTransitionStart) >= themeTransitionDuration {
 		themeTransition = false
+		destroyThemeTransitionCache()
 		setPalette(settings.DarkMode)
 		setDWMStyle(hwndMain)
 		logEvent("theme switch complete: dark=%t", settings.DarkMode)
@@ -1923,6 +2020,7 @@ func wndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr) (resul
 		procKillTimer.Call(uintptr(hwnd), animationTimerID)
 		removeTrayIcon()
 		destroyTrayIcons()
+		destroyThemeTransitionCache()
 		destroyFonts()
 		removePrivateFonts()
 		if windowIcon != 0 {

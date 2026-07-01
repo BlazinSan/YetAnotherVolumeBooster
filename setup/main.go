@@ -126,7 +126,6 @@ var (
 	procDrawTextW        = user32.NewProc("DrawTextW")
 	procFillRect         = user32.NewProc("FillRect")
 	procSetFocus         = user32.NewProc("SetFocus")
-	procIsDialogMessageW = user32.NewProc("IsDialogMessageW")
 	procGetMessageW      = user32.NewProc("GetMessageW")
 	procTranslateMessage = user32.NewProc("TranslateMessage")
 	procDispatchMessageW = user32.NewProc("DispatchMessageW")
@@ -415,7 +414,14 @@ func feedbackText() string {
 	return strings.TrimSpace(syscall.UTF16ToString(buf))
 }
 
-func feedbackWndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr) uintptr {
+func feedbackWndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr) (result uintptr) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			setupLogPanic("feedbackWndProc", recovered)
+			result = 0
+		}
+	}()
+
 	switch message {
 	case wmCreate:
 		feedbackWindow = hwnd
@@ -453,8 +459,8 @@ func feedbackWndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr
 		procPostQuitMessage.Call(0)
 		return 0
 	}
-	r, _, _ := procDefWindowProcW.Call(uintptr(hwnd), uintptr(message), wParam, lParam)
-	return r
+	result, _, _ = procDefWindowProcW.Call(uintptr(hwnd), uintptr(message), wParam, lParam)
+	return result
 }
 
 func showUninstallFeedbackWindow() (string, bool) {
@@ -507,12 +513,6 @@ func showUninstallFeedbackWindow() (string, bool) {
 		r, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0)
 		if int32(r) <= 0 {
 			break
-		}
-		if feedbackWindow != 0 {
-			handled, _, _ := procIsDialogMessageW.Call(uintptr(feedbackWindow), uintptr(unsafe.Pointer(&message)))
-			if handled != 0 {
-				continue
-			}
 		}
 		procTranslateMessage.Call(uintptr(unsafe.Pointer(&message)))
 		procDispatchMessageW.Call(uintptr(unsafe.Pointer(&message)))
