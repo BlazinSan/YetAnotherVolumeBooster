@@ -92,6 +92,46 @@ func argbFromColor(color uintptr) uintptr {
 	return uintptr(0xff000000 | uint32(r)<<16 | uint32(g)<<8 | uint32(b))
 }
 
+func argbWithAlpha(color uintptr, alpha uint8) uintptr {
+	r, g, b := colorComponents(color)
+	return uintptr(uint32(alpha)<<24 | uint32(r)<<16 | uint32(g)<<8 | uint32(b))
+}
+
+// gdipFillRoundedRectAlpha fills a translucent rounded rectangle. Soft shadows
+// and glows are built from stacked translucent layers; there is no GDI fallback
+// because plain GDI cannot blend, so callers simply lose the effect if GDI+ is
+// unavailable.
+func gdipFillRoundedRectAlpha(target rect, radius int32, color uintptr, alpha uint8) bool {
+	if paintGraphics == 0 {
+		return false
+	}
+	var brush uintptr
+	status, _, _ := procGdipCreateSolidFill.Call(argbWithAlpha(color, alpha), uintptr(unsafe.Pointer(&brush)))
+	if status != 0 || brush == 0 {
+		return false
+	}
+	defer procGdipDeleteBrush.Call(brush)
+	return fillRoundedWithBrush(target, radius, brush)
+}
+
+func gdipFillCircleAlpha(target rect, color uintptr, alpha uint8) bool {
+	if paintGraphics == 0 {
+		return false
+	}
+	var brush uintptr
+	status, _, _ := procGdipCreateSolidFill.Call(argbWithAlpha(color, alpha), uintptr(unsafe.Pointer(&brush)))
+	if status != 0 || brush == 0 {
+		return false
+	}
+	defer procGdipDeleteBrush.Call(brush)
+	procGdipFillEllipseI.Call(
+		paintGraphics, brush,
+		uintptr(target.left), uintptr(target.top),
+		uintptr(target.right-target.left), uintptr(target.bottom-target.top),
+	)
+	return true
+}
+
 func clampRoundRadius(target rect, radius int32) int32 {
 	w := target.right - target.left
 	h := target.bottom - target.top

@@ -123,8 +123,8 @@ const (
 	titleButtonSpacing      = 7
 	titleButtonRight        = 22
 	titleButtonTop          = 12
-	contentThemeWidth       = 92
-	contentThemeHeight      = 40
+	contentThemeWidth       = 96
+	contentThemeHeight      = 42
 	resizeBorder            = 8
 	themeTransitionDuration = 430 * time.Millisecond
 
@@ -339,6 +339,7 @@ var (
 
 	startupToggleVisual  float64
 	closeToggleVisual    float64
+	themeSwitchVisual    float64
 	titleMinVisual       float64
 	titleMaxVisual       float64
 	titleCloseVisual     float64
@@ -1059,11 +1060,6 @@ func drawSlider(hdc syscall.Handle, layout uiLayout) {
 	knobYLogical := (railLogical.top + railLogical.bottom) / 2
 
 	baseLine := scaledRect(railLogical)
-	shadow := baseLine
-	shadow.top += scaleInt(2)
-	shadow.bottom += scaleInt(2)
-	fillRoundRect(hdc, shadow, sliderRailRadius, mixColor(palette.shadow, palette.background, 0.30))
-
 	trackFill := mixColor(palette.border, palette.cardSoft, 0.32)
 	fillRoundRect(hdc, baseLine, sliderRailRadius, trackFill)
 	activeLine := baseLine
@@ -1079,14 +1075,14 @@ func drawSlider(hdc syscall.Handle, layout uiLayout) {
 	for i := 0; i <= 20; i++ {
 		t := float64(i) / 20.0
 		tickX := travelLeft + int32(math.Round(float64(travelRight-travelLeft)*t))
-		tickColor := mixColor(palette.muted, trackFill, 0.40)
+		tickColor := mixColor(palette.muted, palette.background, 0.62)
 		if t <= position {
-			tickColor = mixColor(palette.accentDark, palette.accentLight, 0.36)
+			tickColor = mixColor(palette.accent, palette.background, 0.35)
 		}
-		length := int32(13)
+		length := int32(8)
 		width := int32(1)
 		if i%5 == 0 {
-			length = 20
+			length = 14
 			width = 2
 		}
 		drawSoftLine(hdc, tickX, knobYLogical+18, tickX, knobYLogical+18+length, tickColor, width)
@@ -1101,17 +1097,13 @@ func drawSlider(hdc syscall.Handle, layout uiLayout) {
 		knobYLogical+sliderThumbHeight/2-6,
 	))
 	thumbShadow := thumb
-	thumbShadow.top += scaleInt(5)
-	thumbShadow.bottom += scaleInt(5)
-	fillRoundRect(hdc, thumbShadow, sliderThumbHeight/2, mixColor(palette.shadow, palette.background, 0.36))
-	thumbLeft := mixColor(palette.card, palette.accentLight, 0.30)
-	thumbRight := mixColor(palette.accentLight, palette.card, 0.36)
-	if settings.DarkMode {
-		thumbLeft = mixColor(palette.accentDark, palette.cardSoft, 0.18)
-		thumbRight = mixColor(palette.accentLight, palette.accent, 0.25)
-	}
+	thumbShadow.top += scaleInt(3)
+	thumbShadow.bottom += scaleInt(3)
+	fillRoundRect(hdc, thumbShadow, sliderThumbHeight/2, mixColor(palette.shadow, palette.background, 0.55))
+	thumbLeft := mixColor(palette.accentDark, palette.accent, 0.30)
+	thumbRight := mixColor(palette.accent, palette.accentLight, 0.30)
 	fillGradientRoundRect(hdc, thumb, sliderThumbHeight/2, thumbLeft, thumbRight)
-	drawText(hdc, fmt.Sprintf("%d%%", int(math.Round(displayPct))), thumb, fontStatus, palette.text, dtCenter|dtVCenter|dtSingleLine)
+	drawText(hdc, fmt.Sprintf("%d%%", int(math.Round(displayPct))), thumb, fontStatus, rgb(255, 255, 255), dtCenter|dtVCenter|dtSingleLine)
 
 	drawText(hdc, "100%", scaledRect(layout.sliderStartLabel), fontSmall, palette.muted, dtLeft|dtVCenter|dtSingleLine)
 	drawText(hdc, "500%", scaledRect(layout.sliderEndLabel), fontSmall, palette.muted, dtRight|dtVCenter|dtSingleLine)
@@ -1123,25 +1115,26 @@ func drawPresetButton(hdc syscall.Handle, target rect, id int, percent int) {
 	pressed := pressedElement == id
 	visual := controlVisual(id)
 
-	shadow := r
-	shadow.top += scaleInt(4 - int32(math.Round(2*visual)))
-	shadow.bottom += scaleInt(4 - int32(math.Round(2*visual)))
-	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.16))
+	if active {
+		left := mixColor(palette.accentDark, palette.accent, 0.30)
+		right := mixColor(palette.accent, palette.accentLight, 0.30)
+		if pressed {
+			left = mixColor(left, palette.accentDark, 0.35)
+			right = mixColor(right, palette.accentDark, 0.35)
+		}
+		fillGradientRoundRect(hdc, r, pillRadius, left, right)
+		drawText(hdc, fmt.Sprintf("%d%%", percent), r, fontButton, rgb(255, 255, 255), dtCenter|dtVCenter|dtSingleLine)
+		return
+	}
 
-	fill := palette.card
-	if active {
-		fill = mixColor(palette.cardSoft, palette.accent, 0.13)
-	}
-	fill = mixColor(fill, palette.cardSoft, visual*0.85)
+	fill := mixColor(palette.card, palette.cardSoft, visual)
 	if pressed {
-		fill = mixColor(fill, palette.border, 0.16)
+		fill = mixColor(fill, palette.border, 0.20)
 	}
-	fillRoundRect(hdc, r, pillRadius, fill)
-	color := palette.text
-	if active {
-		color = palette.accent
-	}
-	drawText(hdc, fmt.Sprintf("%d%%", percent), r, fontButton, color, dtCenter|dtVCenter|dtSingleLine)
+	border := mixColor(palette.border, palette.card, 0.45)
+	border = mixColor(border, palette.accent, visual*0.30)
+	fillStrokeRoundRect(hdc, r, pillRadius, fill, border, 1)
+	drawText(hdc, fmt.Sprintf("%d%%", percent), r, fontButton, palette.text, dtCenter|dtVCenter|dtSingleLine)
 }
 
 func drawActionIcon(hdc syscall.Handle, kind int, centerX, centerY int32, color uintptr) {
@@ -1164,22 +1157,38 @@ func drawActionButton(hdc syscall.Handle, target rect, id int, label string) {
 	r := scaledRect(target)
 	pressed := pressedElement == id
 	visual := controlVisual(id)
-	shadow := r
-	shadow.top += scaleInt(3 - int32(math.Round(2*visual)))
-	shadow.bottom += scaleInt(3 - int32(math.Round(2*visual)))
-	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.20))
-	fill := palette.card
-	fill = mixColor(fill, palette.cardSoft, visual*0.85)
+	fill := mixColor(palette.card, palette.cardSoft, visual)
 	if pressed {
-		fill = mixColor(fill, palette.border, 0.16)
+		fill = mixColor(fill, palette.border, 0.20)
 	}
-	fillRoundRect(hdc, r, pillRadius, fill)
+	border := mixColor(palette.border, palette.card, 0.45)
+	border = mixColor(border, palette.accent, visual*0.30)
+	fillStrokeRoundRect(hdc, r, pillRadius, fill, border, 1)
 	iconX := target.left + 28
 	iconY := (target.top + target.bottom) / 2
-	iconColor := mixColor(palette.muted, palette.accent, visual*0.42)
+	iconColor := mixColor(palette.muted, palette.accent, visual*0.55)
 	drawActionIcon(hdc, id, iconX, iconY, iconColor)
 	textRect := scaledRect(logicalRect(target.left+48, target.top, target.right-14, target.bottom))
 	drawText(hdc, label, textRect, fontButton, palette.text, dtCenter|dtVCenter|dtSingleLine)
+}
+
+func fillRoundRectAlpha(target rect, radius int32, color uintptr, alpha uint8) {
+	gdipFillRoundedRectAlpha(target, scaleInt(radius), color, alpha)
+}
+
+// drawSoftShadowRoundRect layers translucent black below a control so it reads
+// as depth instead of a solid gray blob.
+func drawSoftShadowRoundRect(target rect, radius int32) {
+	grow1 := target
+	grow1.left -= scaleInt(1)
+	grow1.right += scaleInt(1)
+	grow1.top += scaleInt(2)
+	grow1.bottom += scaleInt(3)
+	fillRoundRectAlpha(grow1, radius, rgb(0, 0, 0), 22)
+	grow2 := target
+	grow2.top += scaleInt(1)
+	grow2.bottom += scaleInt(2)
+	fillRoundRectAlpha(grow2, radius, rgb(0, 0, 0), 30)
 }
 
 func drawToggle(hdc syscall.Handle, centerX, centerY int32, progress float64, hovered bool) {
@@ -1190,57 +1199,47 @@ func drawToggle(hdc syscall.Handle, centerX, centerY int32, progress float64, ho
 		progress = 1
 	}
 	motion := progress * progress * (3 - 2*progress)
-	targetLogical := logicalRect(centerX-38, centerY-18, centerX+38, centerY+18)
-	target := scaledRect(targetLogical)
-	offColor := mixColor(palette.border, palette.cardSoft, 0.48)
+
+	// iOS-style switch: pill track, white knob that stretches into a capsule
+	// mid-slide (squash & stretch) and settles back into a circle.
+	const trackW, trackH, knobInset = 58, 34, 3
+	track := scaledRect(logicalRect(centerX-trackW/2, centerY-trackH/2, centerX+trackW/2, centerY+trackH/2))
+
+	offColor := mixColor(palette.border, palette.cardSoft, 0.30)
+	onLeft := mixColor(palette.accentDark, palette.accent, 0.45)
+	onRight := mixColor(palette.accent, palette.accentLight, 0.45)
 	if hovered {
-		offColor = mixColor(offColor, palette.accent, 0.10)
+		offColor = mixColor(offColor, palette.text, 0.07)
+		onLeft = mixColor(onLeft, palette.accentLight, 0.14)
+		onRight = mixColor(onRight, palette.accentLight, 0.14)
 	}
-	shadow := target
-	shadow.top += scaleInt(4)
-	shadow.bottom += scaleInt(4)
-	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.32))
-	outer := mixColor(palette.card, palette.border, 0.32)
-	if hovered {
-		outer = mixColor(outer, palette.accentLight, 0.22)
-	}
-	fillRoundRect(hdc, target, pillRadius, outer)
-	inner := target
-	inner.left += scaleInt(4)
-	inner.top += scaleInt(4)
-	inner.right -= scaleInt(4)
-	inner.bottom -= scaleInt(4)
-	if progress > 0.02 {
-		onLeft := mixColor(palette.accentDark, palette.accent, 0.24)
-		onRight := mixColor(palette.accentLight, palette.accent, 0.18)
-		base := mixColor(offColor, onLeft, progress)
-		fillGradientRoundRect(hdc, inner, pillRadius, base, mixColor(offColor, onRight, progress))
-	} else {
-		fillRoundRect(hdc, inner, pillRadius, offColor)
-	}
-	knobX := centerX - 22 + int32(math.Round(44*motion))
-	knobFill := mixColor(rgb(245, 251, 249), palette.accentLight, 0.10)
-	if progress > 0.55 {
-		knobFill = mixColor(rgb(230, 250, 241), palette.accentLight, 0.12)
-	}
-	knobShadow := scaledRect(logicalRect(knobX-15, centerY-12, knobX+15, centerY+12))
-	knobShadow.top += scaleInt(2)
-	knobShadow.bottom += scaleInt(2)
-	fillRoundRect(hdc, knobShadow, 10, mixColor(palette.shadow, palette.background, 0.24))
-	knob := scaledRect(logicalRect(knobX-14, centerY-10, knobX+14, centerY+10))
-	fillRoundRect(hdc, knob, 9, knobFill)
+	trackLeft := mixColor(offColor, onLeft, motion)
+	trackRight := mixColor(offColor, onRight, motion)
+	trackEdge := mixColor(trackLeft, rgb(0, 0, 0), 0.16)
+	fillRoundRect(hdc, track, pillRadius, trackEdge)
+	inner := track
+	inner.left += scaleInt(1)
+	inner.top += scaleInt(1)
+	inner.right -= scaleInt(1)
+	inner.bottom -= scaleInt(1)
+	fillGradientRoundRect(hdc, inner, pillRadius, trackLeft, trackRight)
+
+	knobH := int32(trackH - 2*knobInset)
+	stretch := 4 * motion * (1 - motion)
+	knobW := knobH + int32(math.Round(9*stretch))
+	travel := float64(trackW - 2*knobInset - int(knobW))
+	knobLeft := centerX - trackW/2 + knobInset + int32(math.Round(travel*motion))
+	knob := scaledRect(logicalRect(knobLeft, centerY-knobH/2, knobLeft+knobW, centerY+knobH/2))
+	drawSoftShadowRoundRect(knob, pillRadius)
+	fillRoundRect(hdc, knob, pillRadius, rgb(255, 255, 255))
 }
 
 func drawSettingRow(hdc syscall.Handle, target rect, id int, title, subtitle string, progress float64) {
 	r := scaledRect(target)
 	visual := controlVisual(id)
-	fill := palette.card
-	fill = mixColor(fill, palette.cardSoft, visual*0.82)
-	shadow := r
-	shadow.top += scaleInt(3)
-	shadow.bottom += scaleInt(3)
-	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.22))
-	fillRoundRect(hdc, r, pillRadius, fill)
+	fill := mixColor(palette.card, palette.cardSoft, visual*0.9)
+	border := mixColor(palette.border, palette.card, 0.5)
+	fillStrokeRoundRect(hdc, r, pillRadius, fill, border, 1)
 	rowHeight := target.bottom - target.top
 	titleTop := target.top + clampInt32(rowHeight/6, 6, 9)
 	titleBottom := target.top + clampInt32(rowHeight/2, 22, 31)
@@ -1270,22 +1269,14 @@ func drawAnimatedStatusIcon(hdc syscall.Handle, centerX, centerY int32) {
 
 func drawStatusCard(hdc syscall.Handle, layout uiLayout) {
 	r := scaledRect(layout.statusCardRect)
-	shadow := r
-	shadow.top += scaleInt(2)
-	shadow.bottom += scaleInt(2)
-	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.20))
-	fillRoundRect(hdc, r, pillRadius, palette.card)
+	fillStrokeRoundRect(hdc, r, pillRadius, palette.card, mixColor(palette.border, palette.card, 0.5), 1)
 	drawCircle(hdc, layout.statusCardRect.left+23, (layout.statusCardRect.top+layout.statusCardRect.bottom)/2, 5, toneColor(currentStatusTone))
 	drawText(hdc, statusText, scaledRect(logicalRect(layout.statusCardRect.left+48, layout.statusCardRect.top, layout.statusCardRect.right-24, layout.statusCardRect.bottom)), fontStatus, palette.text, dtLeft|dtVCenter|dtSingleLine|dtEndEllipsis)
 }
 
 func drawWarning(hdc syscall.Handle, layout uiLayout) {
 	r := scaledRect(layout.warningRect)
-	shadow := r
-	shadow.top += scaleInt(1)
-	shadow.bottom += scaleInt(1)
-	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.warningBorder, palette.background, 0.72))
-	fillRoundRect(hdc, r, pillRadius, palette.warningBG)
+	fillStrokeRoundRect(hdc, r, pillRadius, palette.warningBG, mixColor(palette.warningBorder, palette.warningBG, 0.45), 1)
 	drawCircle(hdc, layout.warningIconCenter.x, layout.warningIconCenter.y, 7, palette.warning)
 	drawText(hdc, "!", scaledRect(layout.warningIconText), fontSmall, palette.card, dtCenter|dtVCenter|dtSingleLine)
 	drawText(hdc, "Protect your hearing. 300-500% may clip or distort.", scaledRect(layout.warningTextRect), fontSmall, palette.warningText, dtCenter|dtVCenter|dtSingleLine|dtEndEllipsis)
@@ -1318,50 +1309,43 @@ func drawTitleIcon(hdc syscall.Handle, x, y, size int32, fallbackColor uintptr) 
 }
 
 func drawThemeButton(hdc syscall.Handle, target rect, dark bool) {
+	// Raised container pill with a glowing accent blob that glides between the
+	// sun and moon, stretching mid-flight like the setting toggles.
 	r := scaledRect(target)
 	visual := controlVisual(uiTheme)
-	shadow := r
-	shadow.top += scaleInt(5)
-	shadow.bottom += scaleInt(5)
-	fillRoundRect(hdc, shadow, pillRadius, mixColor(palette.shadow, palette.background, 0.34))
+	drawSoftShadowRoundRect(r, pillRadius)
+	fill := mixColor(palette.card, palette.cardSoft, 0.35+visual*0.45)
+	border := mixColor(palette.border, palette.card, 0.45)
+	fillStrokeRoundRect(hdc, r, pillRadius, fill, border, 1)
 
-	outer := mixColor(palette.card, palette.cardSoft, 0.20)
-	if dark {
-		outer = mixColor(palette.border, palette.card, 0.34)
-	}
-	fillRoundRect(hdc, r, pillRadius, outer)
-	inner := r
-	inner.left += scaleInt(5)
-	inner.top += scaleInt(5)
-	inner.right -= scaleInt(5)
-	inner.bottom -= scaleInt(5)
-	fillRoundRect(hdc, inner, pillRadius, mixColor(palette.cardSoft, palette.background, 0.24))
-
-	active := logicalRect(target.left+8, target.top+6, target.left+47, target.bottom-6)
-	inactiveIconX := target.right - 25
-	activeIconX := target.left + 27
-	if dark {
-		active = logicalRect(target.right-47, target.top+6, target.right-8, target.bottom-6)
-		inactiveIconX = target.left + 25
-		activeIconX = target.right - 27
-	}
+	motion := themeSwitchVisual * themeSwitchVisual * (3 - 2*themeSwitchVisual)
 	cy := (target.top + target.bottom) / 2
-	activeRect := scaledRect(active)
-	activeGlow := activeRect
-	activeGlow.left -= scaleInt(2)
-	activeGlow.top -= scaleInt(2)
-	activeGlow.right += scaleInt(2)
-	activeGlow.bottom += scaleInt(2)
-	fillRoundRect(hdc, activeGlow, pillRadius, mixColor(palette.accentLight, palette.background, 0.60-visual*0.10))
-	fillGradientRoundRect(hdc, activeRect, pillRadius, mixColor(palette.accentDark, palette.accent, 0.18), mixColor(palette.accentLight, palette.accent, 0.18))
+	inset := int32(5)
+	blobH := target.bottom - target.top - inset*2
+	stretch := 4 * motion * (1 - motion)
+	blobW := int32(44) + int32(math.Round(8*stretch))
+	travel := float64(target.right - target.left - blobW - inset*2)
+	blobLeft := target.left + inset + int32(math.Round(travel*motion))
+	blob := scaledRect(logicalRect(blobLeft, cy-blobH/2, blobLeft+blobW, cy+blobH/2))
 
-	if dark {
-		drawTintedPNGMask(hdc, inactiveIconX, cy, 20, mixColor(palette.muted, palette.card, 0.18), "theme-sun", themeSunIconPNGBase64)
-		drawTintedPNGMask(hdc, activeIconX, cy, 21, mixColor(palette.card, rgb(255, 255, 255), 0.20), "theme-moon", themeMoonIconPNGBase64)
-		return
+	// Glow halo: expanding translucent accent layers behind the blob.
+	for i, alpha := range []uint8{16, 28, 42} {
+		grow := scaleInt(int32(3 - i))
+		halo := blob
+		halo.left -= grow
+		halo.top -= grow
+		halo.right += grow
+		halo.bottom += grow
+		fillRoundRectAlpha(halo, pillRadius, palette.accentLight, alpha)
 	}
-	drawTintedPNGMask(hdc, activeIconX, cy, 20, mixColor(palette.card, rgb(255, 255, 255), 0.18), "theme-sun", themeSunIconPNGBase64)
-	drawTintedPNGMask(hdc, inactiveIconX, cy, 21, mixColor(palette.muted, palette.accentDark, 0.20), "theme-moon", themeMoonIconPNGBase64)
+	fillGradientRoundRect(hdc, blob, pillRadius, mixColor(palette.accentDark, palette.accent, 0.40), mixColor(palette.accent, palette.accentLight, 0.40))
+
+	sunX := target.left + inset + 22
+	moonX := target.right - inset - 22
+	white := rgb(255, 255, 255)
+	inactive := mixColor(palette.muted, fill, 0.30)
+	drawTintedPNGMask(hdc, sunX, cy, 19, mixColor(white, inactive, motion), "theme-sun", themeSunIconPNGBase64)
+	drawTintedPNGMask(hdc, moonX, cy, 19, mixColor(inactive, white, motion), "theme-moon", themeMoonIconPNGBase64)
 }
 
 func drawTitleBar(hdc syscall.Handle, client rect, dark bool) {
@@ -1538,6 +1522,54 @@ func drawUI(hdc syscall.Handle, client rect) {
 		procSelectClipRgn.Call(uintptr(hdc), 0)
 		procDeleteObject.Call(region)
 	}
+	// The cached frames freeze the theme pill, so redraw it live: its blob keeps
+	// gliding while the reveal expands from underneath it.
+	setPalette(themeTransitionTo)
+	drawThemeButton(hdc, theme, themeTransitionTo)
+}
+
+var (
+	backBufferDC  syscall.Handle
+	backBufferBmp syscall.Handle
+	backBufferOld uintptr
+	backBufferW   int32
+	backBufferH   int32
+)
+
+// ensureBackBuffer keeps one reusable off-screen bitmap so animation frames do
+// not allocate a full-window bitmap 60 times per second.
+func ensureBackBuffer(hdc uintptr, width, height int32) bool {
+	if backBufferDC != 0 && backBufferW == width && backBufferH == height {
+		return true
+	}
+	destroyBackBuffer()
+	memDC, _, _ := procCreateCompatibleDC.Call(hdc)
+	if memDC == 0 {
+		return false
+	}
+	bitmap, _, _ := procCreateCompatibleBitmap.Call(hdc, uintptr(width), uintptr(height))
+	if bitmap == 0 {
+		procDeleteDC.Call(memDC)
+		return false
+	}
+	backBufferOld, _, _ = procSelectObject.Call(memDC, bitmap)
+	backBufferDC = syscall.Handle(memDC)
+	backBufferBmp = syscall.Handle(bitmap)
+	backBufferW, backBufferH = width, height
+	return true
+}
+
+func destroyBackBuffer() {
+	if backBufferDC != 0 {
+		procSelectObject.Call(uintptr(backBufferDC), backBufferOld)
+		procDeleteDC.Call(uintptr(backBufferDC))
+		backBufferDC = 0
+	}
+	if backBufferBmp != 0 {
+		procDeleteObject.Call(uintptr(backBufferBmp))
+		backBufferBmp = 0
+	}
+	backBufferW, backBufferH = 0, 0
 }
 
 func paintWindow(hwnd syscall.Handle) {
@@ -1550,18 +1582,22 @@ func paintWindow(hwnd syscall.Handle) {
 
 	var client rect
 	procGetClientRect.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&client)))
-	memDC, _, _ := procCreateCompatibleDC.Call(hdc)
-	bitmap, _, _ := procCreateCompatibleBitmap.Call(hdc, uintptr(client.right-client.left), uintptr(client.bottom-client.top))
-	oldBitmap, _, _ := procSelectObject.Call(memDC, bitmap)
+	width := client.right - client.left
+	height := client.bottom - client.top
+	if width <= 0 || height <= 0 {
+		return
+	}
+	if !ensureBackBuffer(hdc, width, height) {
+		beginGDIPlus(syscall.Handle(hdc))
+		drawUI(syscall.Handle(hdc), client)
+		endGDIPlus()
+		return
+	}
 
-	beginGDIPlus(syscall.Handle(memDC))
-	drawUI(syscall.Handle(memDC), client)
+	beginGDIPlus(backBufferDC)
+	drawUI(backBufferDC, client)
 	endGDIPlus()
-	procBitBlt.Call(hdc, 0, 0, uintptr(client.right), uintptr(client.bottom), memDC, 0, 0, srccopy)
-
-	procSelectObject.Call(memDC, oldBitmap)
-	procDeleteObject.Call(bitmap)
-	procDeleteDC.Call(memDC)
+	procBitBlt.Call(hdc, 0, 0, uintptr(width), uintptr(height), uintptr(backBufferDC), 0, 0, srccopy)
 }
 
 func hitTest(p point) int {
@@ -1745,6 +1781,16 @@ func easeVisual(value, target float64) float64 {
 	return value + delta*0.32
 }
 
+// easeToggle is slower than easeVisual so the knob's squash-and-stretch glide
+// is actually perceivable (~250 ms) instead of snapping.
+func easeToggle(value, target float64) float64 {
+	delta := target - value
+	if math.Abs(delta) < 0.002 {
+		return target
+	}
+	return value + delta*0.18
+}
+
 func animatedControlIDs() []int {
 	return []int{
 		uiPreset100, uiPreset200, uiPreset300, uiPreset400, uiPreset500,
@@ -1797,13 +1843,15 @@ func tickAnimation() {
 		}
 		displayPct = float64(targetPct)
 	}
-	nextStartup := easeVisual(startupToggleVisual, boolFloat(settings.StartWithWindows))
-	nextClose := easeVisual(closeToggleVisual, boolFloat(settings.CloseToTray))
-	if nextStartup != startupToggleVisual || nextClose != closeToggleVisual {
+	nextStartup := easeToggle(startupToggleVisual, boolFloat(settings.StartWithWindows))
+	nextClose := easeToggle(closeToggleVisual, boolFloat(settings.CloseToTray))
+	nextTheme := easeToggle(themeSwitchVisual, boolFloat(settings.DarkMode))
+	if nextStartup != startupToggleVisual || nextClose != closeToggleVisual || nextTheme != themeSwitchVisual {
 		needsPaint = true
 	}
 	startupToggleVisual = nextStartup
 	closeToggleVisual = nextClose
+	themeSwitchVisual = nextTheme
 	if updateControlVisuals() {
 		needsPaint = true
 	}
@@ -1907,6 +1955,7 @@ func wndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr) (resul
 		addTrayIcon()
 		startupToggleVisual = boolFloat(settings.StartWithWindows)
 		closeToggleVisual = boolFloat(settings.CloseToTray)
+		themeSwitchVisual = boolFloat(settings.DarkMode)
 		applyPercent(currentPct, false, false)
 		procSetTimer.Call(uintptr(hwnd), animationTimerID, 16, 0)
 		return 0
@@ -2021,6 +2070,7 @@ func wndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr) (resul
 		removeTrayIcon()
 		destroyTrayIcons()
 		destroyThemeTransitionCache()
+		destroyBackBuffer()
 		destroyFonts()
 		removePrivateFonts()
 		if windowIcon != 0 {

@@ -42,35 +42,6 @@ const (
 	imageIcon      = 1
 	lrLoadFromFile = 0x00000010
 
-	wsOverlapped   = 0x00000000
-	wsCaption      = 0x00C00000
-	wsSysMenu      = 0x00080000
-	wsChild        = 0x40000000
-	wsVisible      = 0x10000000
-	wsTabStop      = 0x00010000
-	wsBorder       = 0x00800000
-	wsClipChildren = 0x02000000
-	wsExDialog     = 0x00000001
-	wsExTopmost    = 0x00000008
-	esMultiline    = 0x0004
-	esAutovscroll  = 0x0040
-	esNoHideSel    = 0x0100
-	esWantReturn   = 0x1000
-	bsDefPush      = 0x00000001
-	wmCreate       = 0x0001
-	wmDestroy      = 0x0002
-	wmCommand      = 0x0111
-	wmClose        = 0x0010
-	wmPaint        = 0x000F
-	wmSetFont      = 0x0030
-	wmGetText      = 0x000D
-	wmGetTextLen   = 0x000E
-	cwUseDefault   = 0x80000000
-	defaultGUIFont = 17
-	idFeedbackEdit = 3001
-	idFeedbackSend = 3002
-	idFeedbackBack = 3003
-
 	tdfUseHIconMain            = 0x0002
 	tdfAllowDialogCancel       = 0x0008
 	tdfUseCommandLinks         = 0x0010
@@ -78,16 +49,6 @@ const (
 	taskOpenApp          int32 = 1001
 	taskOpenSound        int32 = 1002
 	taskDone             int32 = 1003
-	taskReasonAudio      int32 = 2001
-	taskReasonDesign     int32 = 2002
-	taskReasonNoNeed     int32 = 2003
-	taskReasonSkip       int32 = 2004
-
-	dtLeft       = 0x00000000
-	dtVCenter    = 0x00000004
-	dtWordBreak  = 0x00000010
-	dtSingleLine = 0x00000020
-	transparent  = 1
 )
 
 var (
@@ -111,38 +72,13 @@ var (
 	user32  = syscall.NewLazyDLL("user32.dll")
 	shell32 = syscall.NewLazyDLL("shell32.dll")
 	comctl  = syscall.NewLazyDLL("comctl32.dll")
-	gdi32   = syscall.NewLazyDLL("gdi32.dll")
 
-	procMessageBoxW      = user32.NewProc("MessageBoxW")
-	procLoadImageW       = user32.NewProc("LoadImageW")
-	procDestroyIcon      = user32.NewProc("DestroyIcon")
-	procRegisterClassExW = user32.NewProc("RegisterClassExW")
-	procCreateWindowExW  = user32.NewProc("CreateWindowExW")
-	procDefWindowProcW   = user32.NewProc("DefWindowProcW")
-	procShowWindow       = user32.NewProc("ShowWindow")
-	procUpdateWindow     = user32.NewProc("UpdateWindow")
-	procBeginPaint       = user32.NewProc("BeginPaint")
-	procEndPaint         = user32.NewProc("EndPaint")
-	procDrawTextW        = user32.NewProc("DrawTextW")
-	procFillRect         = user32.NewProc("FillRect")
-	procSetFocus         = user32.NewProc("SetFocus")
-	procGetMessageW      = user32.NewProc("GetMessageW")
-	procTranslateMessage = user32.NewProc("TranslateMessage")
-	procDispatchMessageW = user32.NewProc("DispatchMessageW")
-	procPostQuitMessage  = user32.NewProc("PostQuitMessage")
-	procDestroyWindow    = user32.NewProc("DestroyWindow")
-	procSendMessageW     = user32.NewProc("SendMessageW")
-	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
-	procGetStockObject   = gdi32.NewProc("GetStockObject")
-	procCreateFontW      = gdi32.NewProc("CreateFontW")
-	procCreateSolidBrush = gdi32.NewProc("CreateSolidBrush")
-	procDeleteObject     = gdi32.NewProc("DeleteObject")
-	procSelectObject     = gdi32.NewProc("SelectObject")
-	procSetBkMode        = gdi32.NewProc("SetBkMode")
-	procSetTextColor     = gdi32.NewProc("SetTextColor")
-	procShellExecute     = shell32.NewProc("ShellExecuteW")
-	procIsUserAdmin      = shell32.NewProc("IsUserAnAdmin")
-	procTaskDialog       = comctl.NewProc("TaskDialogIndirect")
+	procMessageBoxW  = user32.NewProc("MessageBoxW")
+	procLoadImageW   = user32.NewProc("LoadImageW")
+	procDestroyIcon  = user32.NewProc("DestroyIcon")
+	procShellExecute = shell32.NewProc("ShellExecuteW")
+	procIsUserAdmin  = shell32.NewProc("IsUserAnAdmin")
+	procTaskDialog   = comctl.NewProc("TaskDialogIndirect")
 )
 
 func utf16(s string) *uint16 { return syscall.StringToUTF16Ptr(s) }
@@ -194,129 +130,7 @@ type taskChoice struct {
 	text string
 }
 
-type setupWndClassEx struct {
-	cbSize        uint32
-	style         uint32
-	lpfnWndProc   uintptr
-	cbClsExtra    int32
-	cbWndExtra    int32
-	hInstance     syscall.Handle
-	hIcon         syscall.Handle
-	hCursor       syscall.Handle
-	hbrBackground syscall.Handle
-	lpszMenuName  *uint16
-	lpszClassName *uint16
-	hIconSm       syscall.Handle
-}
-
-type setupPoint struct{ x, y int32 }
-
-type setupRect struct {
-	left, top, right, bottom int32
-}
-
-type setupPaintStruct struct {
-	hdc         syscall.Handle
-	fErase      int32
-	rcPaint     setupRect
-	fRestore    int32
-	fIncUpdate  int32
-	rgbReserved [32]byte
-}
-
-type setupMsg struct {
-	hwnd    syscall.Handle
-	message uint32
-	wParam  uintptr
-	lParam  uintptr
-	time    uint32
-	pt      setupPoint
-	private uint32
-}
-
-var (
-	feedbackWndProcCallback uintptr
-	feedbackWindow          syscall.Handle
-	feedbackEdit            syscall.Handle
-	feedbackResult          string
-	feedbackAccepted        bool
-	feedbackTitleFont       syscall.Handle
-	feedbackBodyFont        syscall.Handle
-	feedbackButtonFont      syscall.Handle
-	feedbackSendDone        chan struct{}
-)
-
-func lowordSetup(v uintptr) int32 { return int32(v & 0xffff) }
-
-func setupRGB(r, g, b uint8) uintptr {
-	return uintptr(r) | uintptr(g)<<8 | uintptr(b)<<16
-}
-
-func createSetupFont(size, weight int32, face string) syscall.Handle {
-	h, _, _ := procCreateFontW.Call(
-		uintptr(-size), 0, 0, 0,
-		uintptr(weight), 0, 0, 0,
-		1, 0, 0, 5, 0,
-		uintptr(unsafe.Pointer(utf16(face))),
-	)
-	return syscall.Handle(h)
-}
-
-func ensureFeedbackFonts() {
-	if feedbackTitleFont == 0 {
-		feedbackTitleFont = createSetupFont(19, 650, "Segoe UI Variable Display")
-	}
-	if feedbackBodyFont == 0 {
-		feedbackBodyFont = createSetupFont(14, 400, "Segoe UI Variable Text")
-	}
-	if feedbackButtonFont == 0 {
-		feedbackButtonFont = createSetupFont(13, 500, "Segoe UI Variable Text")
-	}
-}
-
-func destroyFeedbackFonts() {
-	for _, font := range []syscall.Handle{feedbackTitleFont, feedbackBodyFont, feedbackButtonFont} {
-		if font != 0 {
-			procDeleteObject.Call(uintptr(font))
-		}
-	}
-	feedbackTitleFont, feedbackBodyFont, feedbackButtonFont = 0, 0, 0
-}
-
-func drawSetupText(hdc syscall.Handle, text string, target setupRect, font syscall.Handle, color uintptr, flags uintptr) {
-	old, _, _ := procSelectObject.Call(uintptr(hdc), uintptr(font))
-	procSetBkMode.Call(uintptr(hdc), transparent)
-	procSetTextColor.Call(uintptr(hdc), color)
-	procDrawTextW.Call(
-		uintptr(hdc),
-		uintptr(unsafe.Pointer(utf16(text))),
-		uintptr(len([]rune(text))),
-		uintptr(unsafe.Pointer(&target)),
-		flags,
-	)
-	procSelectObject.Call(uintptr(hdc), old)
-}
-
-func paintFeedbackWindow(hwnd syscall.Handle) {
-	var ps setupPaintStruct
-	hdcRaw, _, _ := procBeginPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&ps)))
-	if hdcRaw == 0 {
-		return
-	}
-	defer procEndPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&ps)))
-	hdc := syscall.Handle(hdcRaw)
-	bg, _, _ := procCreateSolidBrush.Call(setupRGB(248, 251, 249))
-	if bg != 0 {
-		full := setupRect{left: 0, top: 0, right: 620, bottom: 360}
-		procFillRect.Call(uintptr(hdc), uintptr(unsafe.Pointer(&full)), bg)
-		procDeleteObject.Call(bg)
-	}
-	text := setupRGB(28, 40, 39)
-	muted := setupRGB(87, 105, 103)
-	drawSetupText(hdc, "We're sad to see you go.", setupRect{left: 30, top: 24, right: 570, bottom: 56}, feedbackTitleFont, text, dtLeft|dtVCenter|dtSingleLine)
-	drawSetupText(hdc, "Before YetAnotherVolumeBooster is removed, tell us what made you uninstall it.", setupRect{left: 30, top: 66, right: 570, bottom: 104}, feedbackBodyFont, text, dtLeft|dtWordBreak)
-	drawSetupText(hdc, "Your reason and basic app diagnostics will be sent to the developer.", setupRect{left: 30, top: 108, right: 570, bottom: 142}, feedbackBodyFont, muted, dtLeft|dtWordBreak)
-}
+var feedbackSendDone chan struct{}
 
 func loadDialogIcon() syscall.Handle {
 	if !fileExists(iconPath()) {
@@ -334,6 +148,14 @@ func loadDialogIcon() syscall.Handle {
 }
 
 func showTaskDialog(title, instruction, content, footer string, choices []taskChoice, defaultID int32) (int32, error) {
+	// TaskDialogIndirect only exists in comctl32 v6, which needs a manifest this
+	// executable does not carry. LazyProc.Call panics on a missing export, so
+	// probe first and degrade to a plain message box.
+	if err := procTaskDialog.Find(); err != nil {
+		setupLog("TaskDialogIndirect unavailable, using message box fallback: %v", err)
+		messageBox(instruction+"\n\n"+content, title, MB_OK|MB_ICONINFORMATION)
+		return defaultID, nil
+	}
 	buttons := make([]taskDialogButton, len(choices))
 	buttonText := make([]*uint16, len(choices))
 	for i, choice := range choices {
@@ -381,145 +203,6 @@ func showTaskDialog(title, instruction, content, footer string, choices []taskCh
 	return clicked, nil
 }
 
-func setControlFont(hwnd syscall.Handle, font uintptr) {
-	if hwnd != 0 && font != 0 {
-		procSendMessageW.Call(uintptr(hwnd), wmSetFont, font, 1)
-	}
-}
-
-func createFeedbackChild(parent syscall.Handle, className, text string, style uintptr, x, y, w, h int32, id int32, font uintptr) syscall.Handle {
-	hwnd, _, _ := procCreateWindowExW.Call(
-		0,
-		uintptr(unsafe.Pointer(utf16(className))),
-		uintptr(unsafe.Pointer(utf16(text))),
-		style|wsChild|wsVisible,
-		uintptr(x), uintptr(y), uintptr(w), uintptr(h),
-		uintptr(parent), uintptr(id), 0, 0,
-	)
-	child := syscall.Handle(hwnd)
-	setControlFont(child, font)
-	return child
-}
-
-func feedbackText() string {
-	if feedbackEdit == 0 {
-		return ""
-	}
-	length, _, _ := procSendMessageW.Call(uintptr(feedbackEdit), wmGetTextLen, 0, 0)
-	buf := make([]uint16, int(length)+1)
-	if len(buf) == 0 {
-		return ""
-	}
-	procSendMessageW.Call(uintptr(feedbackEdit), wmGetText, uintptr(len(buf)), uintptr(unsafe.Pointer(&buf[0])))
-	return strings.TrimSpace(syscall.UTF16ToString(buf))
-}
-
-func feedbackWndProc(hwnd syscall.Handle, message uint32, wParam, lParam uintptr) (result uintptr) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			setupLogPanic("feedbackWndProc", recovered)
-			result = 0
-		}
-	}()
-
-	switch message {
-	case wmCreate:
-		feedbackWindow = hwnd
-		ensureFeedbackFonts()
-		feedbackEdit = createFeedbackChild(hwnd, "EDIT", "", wsBorder|esMultiline|esAutovscroll|esNoHideSel|esWantReturn, 30, 152, 530, 110, idFeedbackEdit, uintptr(feedbackBodyFont))
-		createFeedbackChild(hwnd, "BUTTON", "Uninstall", wsTabStop|bsDefPush, 348, 286, 102, 34, idFeedbackSend, uintptr(feedbackButtonFont))
-		createFeedbackChild(hwnd, "BUTTON", "Cancel", wsTabStop, 462, 286, 98, 34, idFeedbackBack, uintptr(feedbackButtonFont))
-		return 0
-	case wmPaint:
-		paintFeedbackWindow(hwnd)
-		return 0
-	case wmCommand:
-		switch lowordSetup(wParam) {
-		case idFeedbackSend:
-			feedbackResult = feedbackText()
-			if feedbackResult == "" {
-				feedbackResult = "No reason provided."
-			}
-			feedbackAccepted = true
-			procDestroyWindow.Call(uintptr(hwnd))
-			return 0
-		case idFeedbackBack:
-			feedbackAccepted = false
-			procDestroyWindow.Call(uintptr(hwnd))
-			return 0
-		}
-	case wmClose:
-		feedbackAccepted = false
-		procDestroyWindow.Call(uintptr(hwnd))
-		return 0
-	case wmDestroy:
-		feedbackWindow = 0
-		feedbackEdit = 0
-		destroyFeedbackFonts()
-		procPostQuitMessage.Call(0)
-		return 0
-	}
-	result, _, _ = procDefWindowProcW.Call(uintptr(hwnd), uintptr(message), wParam, lParam)
-	return result
-}
-
-func showUninstallFeedbackWindow() (string, bool) {
-	feedbackWindow = 0
-	feedbackEdit = 0
-	feedbackResult = ""
-	feedbackAccepted = false
-	hInst, _, _ := syscall.NewLazyDLL("kernel32.dll").NewProc("GetModuleHandleW").Call(0)
-	className := utf16(appName + "UninstallFeedback")
-	feedbackWndProcCallback = syscall.NewCallback(feedbackWndProc)
-	icon := loadDialogIcon()
-	if icon != 0 {
-		defer procDestroyIcon.Call(uintptr(icon))
-	}
-	wc := setupWndClassEx{
-		cbSize:        uint32(unsafe.Sizeof(setupWndClassEx{})),
-		lpfnWndProc:   feedbackWndProcCallback,
-		hInstance:     syscall.Handle(hInst),
-		hIcon:         icon,
-		hbrBackground: syscall.Handle(6),
-		lpszClassName: className,
-		hIconSm:       icon,
-	}
-	procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
-	width, height := int32(620), int32(370)
-	screenW, _, _ := procGetSystemMetrics.Call(0)
-	screenH, _, _ := procGetSystemMetrics.Call(1)
-	x := (int32(screenW) - width) / 2
-	y := (int32(screenH) - height) / 2
-	hwnd, _, _ := procCreateWindowExW.Call(
-		wsExDialog|wsExTopmost,
-		uintptr(unsafe.Pointer(className)),
-		uintptr(unsafe.Pointer(utf16("Uninstall "+appName))),
-		wsOverlapped|wsCaption|wsSysMenu|wsClipChildren,
-		uintptr(x), uintptr(y), uintptr(width), uintptr(height),
-		0, 0, hInst, 0,
-	)
-	if hwnd == 0 {
-		setupLog("uninstall feedback window failed to create")
-		return "No reason provided.", true
-	}
-	feedbackWindow = syscall.Handle(hwnd)
-	procShowWindow.Call(hwnd, SW_SHOWNORMAL)
-	procUpdateWindow.Call(hwnd)
-	if feedbackEdit != 0 {
-		procSetFocus.Call(uintptr(feedbackEdit))
-	}
-	var message setupMsg
-	for {
-		r, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&message)), 0, 0, 0)
-		if int32(r) <= 0 {
-			break
-		}
-		procTranslateMessage.Call(uintptr(unsafe.Pointer(&message)))
-		procDispatchMessageW.Call(uintptr(unsafe.Pointer(&message)))
-	}
-	return feedbackResult, feedbackAccepted
-}
-
 func showUninstallFeedbackForm() (string, bool) {
 	workDir := filepath.Join(dataDir(), "feedback")
 	if err := os.MkdirAll(workDir, 0755); err != nil {
@@ -536,18 +219,25 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
+$ink = [System.Drawing.Color]::FromArgb(18, 32, 28)
+$muted = [System.Drawing.Color]::FromArgb(90, 106, 108)
+$accent = [System.Drawing.Color]::FromArgb(15, 122, 82)
+$paper = [System.Drawing.Color]::FromArgb(248, 251, 250)
+
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'Uninstall YetAnotherVolumeBooster'
 $form.StartPosition = 'CenterScreen'
 $form.ClientSize = New-Object System.Drawing.Size(620, 360)
-$form.MinimumSize = New-Object System.Drawing.Size(620, 360)
-$form.BackColor = [System.Drawing.Color]::FromArgb(248, 251, 249)
+$form.FormBorderStyle = 'FixedSingle'
+$form.MaximizeBox = $false
+$form.BackColor = $paper
+$form.ForeColor = $ink
 $form.Font = New-Object System.Drawing.Font('Segoe UI', 11)
 $form.TopMost = $true
 
 $title = New-Object System.Windows.Forms.Label
 $title.Text = "We're sad to see you go."
-$title.Font = New-Object System.Drawing.Font('Segoe UI', 15, [System.Drawing.FontStyle]::Bold)
+$title.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 15)
 $title.AutoSize = $false
 $title.SetBounds(28, 24, 560, 34)
 $form.Controls.Add($title)
@@ -560,28 +250,56 @@ $form.Controls.Add($body)
 
 $privacy = New-Object System.Windows.Forms.Label
 $privacy.Text = 'Your reason and basic app diagnostics will be sent to the developer.'
-$privacy.ForeColor = [System.Drawing.Color]::FromArgb(88, 105, 103)
+$privacy.ForeColor = $muted
+$privacy.Font = New-Object System.Drawing.Font('Segoe UI', 9.5)
 $privacy.AutoSize = $false
-$privacy.SetBounds(28, 108, 560, 30)
+$privacy.SetBounds(28, 104, 560, 26)
 $form.Controls.Add($privacy)
+
+$boxFrame = New-Object System.Windows.Forms.Panel
+$boxFrame.BackColor = [System.Drawing.Color]::FromArgb(179, 198, 183)
+$boxFrame.SetBounds(28, 144, 564, 126)
+$form.Controls.Add($boxFrame)
+
+$boxPad = New-Object System.Windows.Forms.Panel
+$boxPad.BackColor = [System.Drawing.Color]::White
+$boxPad.SetBounds(1, 1, 562, 124)
+$boxFrame.Controls.Add($boxPad)
 
 $box = New-Object System.Windows.Forms.TextBox
 $box.Multiline = $true
 $box.AcceptsReturn = $true
-$box.AcceptsTab = $true
 $box.ScrollBars = 'Vertical'
+$box.BorderStyle = 'None'
+$box.BackColor = [System.Drawing.Color]::White
+$box.ForeColor = $ink
 $box.Font = New-Object System.Drawing.Font('Segoe UI', 11)
-$box.SetBounds(28, 150, 562, 120)
-$form.Controls.Add($box)
+$box.SetBounds(10, 8, 542, 108)
+$boxPad.Controls.Add($box)
 
 $uninstall = New-Object System.Windows.Forms.Button
 $uninstall.Text = 'Uninstall'
-$uninstall.SetBounds(380, 292, 100, 34)
+$uninstall.SetBounds(372, 296, 108, 38)
+$uninstall.FlatStyle = 'Flat'
+$uninstall.FlatAppearance.BorderSize = 0
+$uninstall.BackColor = $accent
+$uninstall.ForeColor = [System.Drawing.Color]::White
+$uninstall.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 10.5)
+$uninstall.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(10, 92, 62)
+$uninstall.Cursor = 'Hand'
 $form.Controls.Add($uninstall)
 
 $cancel = New-Object System.Windows.Forms.Button
 $cancel.Text = 'Cancel'
-$cancel.SetBounds(490, 292, 100, 34)
+$cancel.SetBounds(490, 296, 100, 38)
+$cancel.FlatStyle = 'Flat'
+$cancel.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(179, 198, 183)
+$cancel.FlatAppearance.BorderSize = 1
+$cancel.BackColor = $paper
+$cancel.ForeColor = $ink
+$cancel.Font = New-Object System.Drawing.Font('Segoe UI', 10.5)
+$cancel.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(238, 246, 243)
+$cancel.Cursor = 'Hand'
 $form.Controls.Add($cancel)
 
 $script:accepted = $false
@@ -589,7 +307,7 @@ $uninstall.Add_Click({ $script:accepted = $true; $form.Close() })
 $cancel.Add_Click({ $script:accepted = $false; $form.Close() })
 $form.AcceptButton = $uninstall
 $form.CancelButton = $cancel
-$form.Add_Shown({ $box.Focus() })
+$form.Add_Shown({ $form.Activate(); $box.Focus() })
 
 [void]$form.ShowDialog()
 if ($script:accepted) {
@@ -607,6 +325,12 @@ exit 2
 	defer os.Remove(resultPath)
 
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File", scriptPath)
+	// CREATE_NO_WINDOW suppresses the console without touching the STARTUPINFO
+	// show state. HideWindow must not be used here: it marks the process's first
+	// window hidden, which swallows the WinForms dialog itself and leaves the
+	// uninstaller waiting on a window nobody can see.
+	const createNoWindow = 0x08000000
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNoWindow}
 	err := cmd.Run()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 2 {
@@ -646,29 +370,34 @@ func sendUninstallFeedback(reason string) {
 		values.Set("windows_user", username)
 	}
 	client := http.Client{Timeout: 5 * time.Second}
-	for _, endpoint := range []string{
-		"https://formsubmit.co/ajax/hammau05@gmail.com",
-		"https://formsubmit.co/hammau05@gmail.com",
-	} {
+	const endpoint = "https://formsubmit.co/ajax/hammau05@gmail.com"
+	for attempt := 1; attempt <= 2; attempt++ {
 		req, err := http.NewRequest("POST", endpoint, strings.NewReader(values.Encode()))
 		if err != nil {
-			setupLog("uninstall feedback request build failed for %s: %v", endpoint, err)
-			continue
+			setupLog("uninstall feedback request build failed: %v", err)
+			return
 		}
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Accept", "application/json")
+		// FormSubmit rejects submissions without a browser-style origin, and the
+		// form activation is keyed to this exact domain. Do not change these
+		// without re-activating the form for the new domain.
+		req.Header.Set("Referer", "https://blazinsan.github.io/YetAnotherVolumeBooster/")
+		req.Header.Set("Origin", "https://blazinsan.github.io")
 		resp, err := client.Do(req)
 		if err != nil {
-			setupLog("uninstall feedback email send failed for %s: %v", endpoint, err)
+			setupLog("uninstall feedback email send failed (attempt %d): %v", attempt, err)
 			continue
 		}
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 		resp.Body.Close()
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			setupLog("uninstall feedback email send accepted by %s: status=%d", endpoint, resp.StatusCode)
+		// FormSubmit reports failures inside a 200 response, so the JSON body is
+		// the source of truth, not the status code.
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 && strings.Contains(string(body), `"success":"true"`) {
+			setupLog("uninstall feedback email delivered: %s", strings.TrimSpace(string(body)))
 			return
 		}
-		setupLog("uninstall feedback email send rejected by %s: status=%d body=%s", endpoint, resp.StatusCode, strings.TrimSpace(string(body)))
+		setupLog("uninstall feedback email rejected (attempt %d): status=%d body=%s", attempt, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 }
 
@@ -1551,6 +1280,9 @@ func uninstall() error {
 			return nil
 		}
 	}
+	// Close the running controller so its window and tray icon disappear
+	// before the files are removed.
+	stopRunningController()
 	if err := removeIntegration(); err != nil {
 		return err
 	}
@@ -1558,13 +1290,19 @@ func uninstall() error {
 	removeShortcuts()
 	removeUninstallEntry()
 	_ = runHidden("reg.exe", "delete", `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "/v", appName, "/f")
+	// Let the feedback email finish before the data dir (and its log) is removed;
+	// the HTTP client allows 5s per attempt, so wait longer than that.
+	waitForUninstallFeedback(12 * time.Second)
 	_ = os.RemoveAll(dataDir())
-	waitForUninstallFeedback(3 * time.Second)
 
-	// Delete the installation directory after this executable exits.
-	cmdLine := fmt.Sprintf(`timeout /t 2 /nobreak >nul & rmdir /s /q "%s"`, installDir())
-	cmd := exec.Command("cmd.exe", "/C", cmdLine)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	// Delete the installation directory after this executable exits. cmd.exe does
+	// not understand Go's default \" argument escaping, so hand it the raw command
+	// line; ping is the delay because timeout aborts without console stdin.
+	cmd := exec.Command("cmd.exe")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow: true,
+		CmdLine:    fmt.Sprintf(`cmd.exe /C "ping -n 3 127.0.0.1 >nul & rmdir /s /q "%s""`, installDir()),
+	}
 	_ = cmd.Start()
 	if unattendedSetup() {
 		setupLog("uninstall success message suppressed for unattended setup")
