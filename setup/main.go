@@ -520,6 +520,114 @@ func showUninstallFeedbackWindow() (string, bool) {
 	return feedbackResult, feedbackAccepted
 }
 
+func showUninstallFeedbackForm() (string, bool) {
+	workDir := filepath.Join(dataDir(), "feedback")
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		setupLog("uninstall feedback work dir failed: %v", err)
+		return "No reason provided.", true
+	}
+	scriptPath := filepath.Join(workDir, fmt.Sprintf("feedback-%d.ps1", os.Getpid()))
+	resultPath := filepath.Join(workDir, fmt.Sprintf("feedback-%d.txt", os.Getpid()))
+	_ = os.Remove(resultPath)
+
+	script := fmt.Sprintf(`
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
+
+$form = New-Object System.Windows.Forms.Form
+$form.Text = 'Uninstall YetAnotherVolumeBooster'
+$form.StartPosition = 'CenterScreen'
+$form.ClientSize = New-Object System.Drawing.Size(620, 360)
+$form.MinimumSize = New-Object System.Drawing.Size(620, 360)
+$form.BackColor = [System.Drawing.Color]::FromArgb(248, 251, 249)
+$form.Font = New-Object System.Drawing.Font('Segoe UI', 11)
+$form.TopMost = $true
+
+$title = New-Object System.Windows.Forms.Label
+$title.Text = "We're sad to see you go."
+$title.Font = New-Object System.Drawing.Font('Segoe UI', 15, [System.Drawing.FontStyle]::Bold)
+$title.AutoSize = $false
+$title.SetBounds(28, 24, 560, 34)
+$form.Controls.Add($title)
+
+$body = New-Object System.Windows.Forms.Label
+$body.Text = 'Before YetAnotherVolumeBooster is removed, tell us what made you uninstall it.'
+$body.AutoSize = $false
+$body.SetBounds(28, 70, 560, 30)
+$form.Controls.Add($body)
+
+$privacy = New-Object System.Windows.Forms.Label
+$privacy.Text = 'Your reason and basic app diagnostics will be sent to the developer.'
+$privacy.ForeColor = [System.Drawing.Color]::FromArgb(88, 105, 103)
+$privacy.AutoSize = $false
+$privacy.SetBounds(28, 108, 560, 30)
+$form.Controls.Add($privacy)
+
+$box = New-Object System.Windows.Forms.TextBox
+$box.Multiline = $true
+$box.AcceptsReturn = $true
+$box.AcceptsTab = $true
+$box.ScrollBars = 'Vertical'
+$box.Font = New-Object System.Drawing.Font('Segoe UI', 11)
+$box.SetBounds(28, 150, 562, 120)
+$form.Controls.Add($box)
+
+$uninstall = New-Object System.Windows.Forms.Button
+$uninstall.Text = 'Uninstall'
+$uninstall.SetBounds(380, 292, 100, 34)
+$form.Controls.Add($uninstall)
+
+$cancel = New-Object System.Windows.Forms.Button
+$cancel.Text = 'Cancel'
+$cancel.SetBounds(490, 292, 100, 34)
+$form.Controls.Add($cancel)
+
+$script:accepted = $false
+$uninstall.Add_Click({ $script:accepted = $true; $form.Close() })
+$cancel.Add_Click({ $script:accepted = $false; $form.Close() })
+$form.AcceptButton = $uninstall
+$form.CancelButton = $cancel
+$form.Add_Shown({ $box.Focus() })
+
+[void]$form.ShowDialog()
+if ($script:accepted) {
+  [System.IO.File]::WriteAllText(%s, $box.Text, [System.Text.UTF8Encoding]::new($false))
+  exit 0
+}
+exit 2
+`, "'"+psQuote(resultPath)+"'")
+
+	if err := os.WriteFile(scriptPath, []byte(script), 0644); err != nil {
+		setupLog("uninstall feedback script write failed: %v", err)
+		return "No reason provided.", true
+	}
+	defer os.Remove(scriptPath)
+	defer os.Remove(resultPath)
+
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File", scriptPath)
+	err := cmd.Run()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 2 {
+			setupLog("uninstall feedback form cancelled")
+			return "", false
+		}
+		setupLog("uninstall feedback form failed: %v", err)
+		return "No reason provided.", true
+	}
+	data, err := os.ReadFile(resultPath)
+	if err != nil {
+		setupLog("uninstall feedback result read failed: %v", err)
+		return "No reason provided.", true
+	}
+	reason := strings.TrimSpace(string(data))
+	if reason == "" {
+		reason = "No reason provided."
+	}
+	return reason, true
+}
+
 func sendUninstallFeedback(reason string) {
 	values := url.Values{}
 	values.Set("_subject", appName+" uninstall feedback")
@@ -647,7 +755,7 @@ func showAudioOnboarding(status string) bool {
 }
 
 func showUninstallFeedback() bool {
-	reason, accepted := showUninstallFeedbackWindow()
+	reason, accepted := showUninstallFeedbackForm()
 	if !accepted {
 		setupLog("uninstall cancelled from feedback dialog")
 		return false

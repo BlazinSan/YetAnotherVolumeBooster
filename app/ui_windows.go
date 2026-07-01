@@ -126,7 +126,7 @@ const (
 	contentThemeWidth       = 92
 	contentThemeHeight      = 40
 	resizeBorder            = 8
-	themeTransitionDuration = 280 * time.Millisecond
+	themeTransitionDuration = 430 * time.Millisecond
 
 	htClient      = 1
 	htCaption     = 2
